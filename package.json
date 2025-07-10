@@ -5,7 +5,7 @@
   "scripts": {
     "generate": "npx prisma generate",
     "deploy": "npx prisma migrate deploy",
-    "dev": "nodemon server.js",
+    "dev": "npm run generate && nodemon --watch . --ext js,json,prisma --exec \"node server.js\"",
     "build": "npm run generate",
     "start": "node server.js"
   },

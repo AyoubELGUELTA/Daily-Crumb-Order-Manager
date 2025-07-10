@@ -19,7 +19,8 @@ model Product {
   name  String  
   price Float
   inStock Boolean @default(false)
-  orderItems OrderItem[] @default(none)
+  orderItem OrderItem[]
+  
 }
 
 model User {
@@ -34,16 +35,16 @@ model User {
 model Order {
   id  Int @id @default(autoincrement())
   dateOrder DateTime @default(now())
-  orderItems OrderItem[] @default(none)
+  orderItems OrderItem[] 
   clientId  Int
-  client    Client   @relation(fields: [clientId], references: [id])
 
+  client Client @relation(fields: [clientId], references: [id])
 
 }
 
 model OrderItem {
   id        Int      @id @default(autoincrement())
-  quantity  Int
+  quantity  Int      @default(1)
 
   orderId   Int
   productId Int
@@ -56,15 +57,9 @@ model Client {
   id  Int @id @default(autoincrement())
   email String @unique
   name String?
-  createdAt DateTime
+  createdAt DateTime  @default(now())
   orders Order[]
-
-
 }
-
-
-
-
 
 
 

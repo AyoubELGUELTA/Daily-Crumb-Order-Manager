@@ -4,7 +4,7 @@ const path = require('path');
 const express = require('express');
 const router = express.Router();
 
-const prisma = require('../../prisma.js');
+const prisma = require('../../prismaClient.js');
 
 router.get('/', async (req, res, next) => {
     try {
