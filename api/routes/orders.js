@@ -92,13 +92,11 @@ router.post('/', async (req, res, next) => {
         const order = await prisma.order.create({
             data: {
                 clientId: parsedClientid
-            },
-            client: {
-                connect: { id: parsedClientid }
             }
         });
 
         res.status(201).json({
+            order: order,
             message: "(empty) order created!",
             request: {
                 type: 'GET',
@@ -108,7 +106,7 @@ router.post('/', async (req, res, next) => {
         })
     }
     catch (error) {
-        res.status(500).json({ error: error })
+        res.status(500).json({ error: error.message })
     }
 
 
@@ -125,7 +123,7 @@ router.post('/:orderId/items', async (req, res, next) => {
         if (!productId) {
             return res.status(400).json({ message: 'Product ID is required.' });
         }
-        if (quantity !== none) {
+        if (quantity !== undefined) {
             const parsedQuantity = parseInt(quantity);
             if (isNaN(parsedQuantity) || parsedQuantity < 1) {
                 return res.status(400).json({ message: 'Quantity must be a positive number.' });
@@ -150,17 +148,16 @@ router.post('/:orderId/items', async (req, res, next) => {
         const newOrderItem = await prisma.orderItem.create({
             data: {
                 quantity: quantity || 1,
-                orderId: parsedOrderId,
+                orderId: orderId,
                 productId: productId
             },
-            order: {
-                connect: { id: orderId }
-            },
-            product: {
-                connect: { id: productId }
-            },
             include: {
-                product: true
+                product: {
+                    select: {
+                        name: true,
+                        price: true,
+                    }
+                }
             }
         });
 
@@ -180,13 +177,67 @@ router.post('/:orderId/items', async (req, res, next) => {
 
     }
 
-    catch (err) {
-
+    catch (error) {
+        res.status(500).json({ error: error.message });
     }
 })
-// router.patch('/:productId')
+router.patch('/:orderId/items', async (req, res, next) => {
+    try {
 
-// router.delete('/:productId')
+        const productId = parseInt(req.body.productId);
+        if (!productId) {
+            return res.status(500).json({ message: "Choose what do you want to update." })
+        }
+        const orderId = parsedInt(req.params.orderId);
+
+        const quantity = parseInt(req.body.quantity);
+
+        const orderItemToUpdate = prisma.orderItem.update({
+            where: {
+                orderId: orderId,
+                productId: productId
+            },
+            data: {
+                quantity: quantity
+            }
+        });
+
+        // res.status(204).json({ UPDATED BLABLABLA... })
+
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.delete('/:orderId/items', async (req, res, next) => {
+    try {
+
+        const productId = parseInt(req.body.productId);
+        if (!productId) {
+            return res.status(500).json({ message: "Choose what item you want to delete." })
+        }
+        const orderId = parsedInt(req.params.orderId);
+
+        const quantity = parseInt(req.body.quantity);
+
+        const orderItemToDelete = prisma.orderItem.update({
+            where: {
+                orderId: orderId,
+                productId: productId
+            },
+            data: {
+                quantity: quantity
+            }
+        })
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 
 

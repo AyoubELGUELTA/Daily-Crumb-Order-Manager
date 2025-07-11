@@ -15,7 +15,7 @@ router.get('/', async (req, res, next) => {
                 name: true,
                 price: true,
                 inStock: true,
-                orderItems: false
+                orderItem: false
             }
         });
 
@@ -41,7 +41,7 @@ router.get('/', async (req, res, next) => {
 
     catch (error) {
         console.log(error);
-        res.status(500).json({ error: error });
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -102,7 +102,7 @@ router.post('/', async (req, res, next) => {
         })
     }
     catch (error) {
-        res.status(500).json({ error: error })
+        res.status(500).json({ error: error.message })
     }
 
 

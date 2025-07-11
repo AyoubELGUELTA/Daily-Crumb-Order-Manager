@@ -7,7 +7,8 @@
     "deploy": "npx prisma migrate deploy",
     "dev": "npm run generate && nodemon --watch . --ext js,json,prisma --exec \"node server.js\"",
     "build": "npm run generate",
-    "start": "node server.js"
+    "start": "node server.js",
+    "push": "npx prisma db push"
   },
   "keywords": [],
   "author": "",
