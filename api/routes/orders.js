@@ -29,7 +29,8 @@ router.get('/', async (req, res, next) => {
                     client: order.client,
                     request: {
                         type: 'GET',
-                        url: 'http://localhost:3100/orders/' + order.id
+                        url: 'http://localhost:3100/orders/' + order.id,
+                        comment: 'Click to see the order detail !'
                     }
                 })
                 )
@@ -53,7 +54,17 @@ router.get('/:orderId', async (req, res, next) => {
         parsedIdOrder = parseInt(req.params.orderId);
 
         const order = await prisma.order.findUnique({
-            where: { id: parsedIdOrder }
+            where: { id: parsedIdOrder },
+            include: {
+                orderItems: {
+                    select: {
+                        id: true,
+                        productId: true,
+                        quantity: true
+                    }
+                },
+                client: true
+            }
         });
 
         if (!order) {
@@ -61,12 +72,7 @@ router.get('/:orderId', async (req, res, next) => {
         };
 
         const response = {
-            order: {
-                id: order.id,
-                dateOrder: order.name,
-                orderItems: order.orderItems,
-                clientId: order.clientId
-            },
+            order: order,
             request: {
                 type: 'GET',
                 url: 'http://localhost:3100/orders',
@@ -79,7 +85,7 @@ router.get('/:orderId', async (req, res, next) => {
 
     }
     catch (error) {
-        res.status(500).json({ error: error });
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -149,7 +155,7 @@ router.post('/:orderId/items', async (req, res, next) => {
 
         const existingOrderItem = await prisma.orderItem.findFirst({
             where: {
-                id: parsedOrderId,
+                orderId: parsedOrderId,
                 productId: productId
             }
         });
@@ -176,7 +182,43 @@ router.post('/:orderId/items', async (req, res, next) => {
                 message: "Order item added (updated)!",
                 product: {
                     id: existingOrderItem.productId,
-                    quantity: existingOrderItem.quantity,
+                    quantity: existingOrderItem.quantity + quantity,
+                    orderId: parsedOrderId
+                },
+                request: {
+                    type: 'GET',
+                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
+                    comment: "Look at the order details"
+                }
+            })
+
+        }
+
+
+        else {
+
+            const newOrderItem = await prisma.orderItem.create({
+                data: {
+                    quantity: quantity || 1,
+                    orderId: parsedOrderId,
+                    productId: productId
+                },
+                include: {
+                    product: {
+                        select: {
+                            id: true,
+                            name: true,
+                            price: true,
+                        }
+                    }
+                }
+            });
+
+            res.status(201).json({
+                message: "Order item added (updated)!",
+                product: {
+                    id: newOrderItem.productId,
+                    quantity: newOrderItem.quantity,
                     orderId: parsedOrderId
                 },
                 request: {
@@ -189,36 +231,6 @@ router.post('/:orderId/items', async (req, res, next) => {
         }
 
 
-        else {
-
-
-            const newOrderItem = await prisma.orderItem.create({
-                data: {
-                    quantity: quantity || 1,
-                    orderId: parsedOrderId,
-                    productId: productId
-                },
-                include: {
-                    product: {
-                        select: {
-                            name: true,
-                            price: true,
-                        }
-                    }
-                }
-            });
-
-            res.status(201).json({
-                message: 'Order item added successfully to order.',
-                orderItem: newOrderItem,
-                request: {
-                    type: "GET",
-                    url: `http://localhost:3100/orders/${orderId}`,
-                    comment: 'View the updated order details'
-                }
-            })
-
-        }
 
 
 
