@@ -73,9 +73,9 @@ router.get('/:orderId', async (req, res, next) => {
                 comment: 'look at all orders'
             }
         }
-        res.status(200).json({ message: 'Handling Get a specific product successfully' });
+        // res.status(200).json({ message: 'Handling Get a specific product successfully' });
 
-        // res.status(200).json(response);
+        res.status(200).json(response);
 
     }
     catch (error) {
@@ -114,11 +114,19 @@ router.post('/', async (req, res, next) => {
 
 router.post('/:orderId/items', async (req, res, next) => {
     try {
-        const orderId = parseInt(req.params.orderId);
+        const parsedOrderId = parseInt(req.params.orderId);
         const { productId, quantity } = req.body;
 
-        if (isNaN(orderId)) {
+        if (isNaN(parsedOrderId)) {
             return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
+        }
+
+        const existingOrder = prisma.order.findUnique({
+            where: { id: parsedOrderId }
+        });
+
+        if (!existingOrder) {
+            return res.status(404).json({ message: `Order with ID ${parsedOrderId} not found.` });
         }
         if (!productId) {
             return res.status(400).json({ message: 'Product ID is required.' });
@@ -129,13 +137,6 @@ router.post('/:orderId/items', async (req, res, next) => {
                 return res.status(400).json({ message: 'Quantity must be a positive number.' });
             }
         }
-        const existingOrder = await prisma.order.findUnique({
-            where: { id: orderId },
-        });
-
-        if (!existingOrder) {
-            return res.status(404).json({ message: `Order with ID ${orderId} not found.` });
-        }
 
         const existingProduct = await prisma.product.findUnique({
             where: { id: productId },
@@ -145,31 +146,79 @@ router.post('/:orderId/items', async (req, res, next) => {
         }
 
 
-        const newOrderItem = await prisma.orderItem.create({
-            data: {
-                quantity: quantity || 1,
-                orderId: orderId,
+
+        const existingOrderItem = await prisma.orderItem.findFirst({
+            where: {
+                id: parsedOrderId,
                 productId: productId
-            },
-            include: {
-                product: {
-                    select: {
-                        name: true,
-                        price: true,
-                    }
-                }
             }
         });
 
-        res.status(201).json({
-            message: 'Order item added successfully to order.',
-            orderItem: newOrderItem,
-            request: {
-                type: "GET",
-                url: `http://localhost:3100/orders/${orderId}`,
-                comment: 'View the updated order details'
-            }
-        })
+        if (existingOrderItem) {
+            await prisma.orderItem.update({
+                where: {
+                    id: existingOrderItem.id,
+                    orderId: parsedOrderId
+                },
+                data: { quantity: existingOrderItem.quantity + quantity },
+                include: {
+                    product: {
+                        select: {
+                            id: true,
+                            name: true,
+                            price: true
+                        }
+                    }
+                }
+            });
+
+            res.status(201).json({
+                message: "Order item added (updated)!",
+                product: {
+                    id: existingOrderItem.productId,
+                    quantity: existingOrderItem.quantity,
+                    orderId: parsedOrderId
+                },
+                request: {
+                    type: 'GET',
+                    url: "http://localhost:3100/" + String(parsedOrderId),
+                    comment: "Look at the order details"
+                }
+            })
+
+        }
+
+
+        else {
+
+
+            const newOrderItem = await prisma.orderItem.create({
+                data: {
+                    quantity: quantity || 1,
+                    orderId: parsedOrderId,
+                    productId: productId
+                },
+                include: {
+                    product: {
+                        select: {
+                            name: true,
+                            price: true,
+                        }
+                    }
+                }
+            });
+
+            res.status(201).json({
+                message: 'Order item added successfully to order.',
+                orderItem: newOrderItem,
+                request: {
+                    type: "GET",
+                    url: `http://localhost:3100/orders/${orderId}`,
+                    comment: 'View the updated order details'
+                }
+            })
+
+        }
 
 
 
@@ -239,6 +288,36 @@ router.delete('/:orderId/items', async (req, res, next) => {
     }
 });
 
+
+router.delete('/:orderId', async (req, res, next) => {
+    try {
+        const parsedOrderId = parseInt(req.params.orderId);
+
+        console.log(parsedOrderId)
+
+
+
+        const orderToDelete = await prisma.order.findUnique({
+            where: { id: parsedOrderId }
+        });
+
+        if (!orderToDelete) {
+            res.status(404).json({ error: "Order id not found." })
+        }
+
+        await prisma.order.delete({
+            where: { id: parsedOrderId }
+        });
+
+        res.status(204).send();
+
+    }
+
+    catch (error) {
+        console.error("Error deleting order: ", error)
+        res.status(500).json({ error: error.message });
+    }
+});
 
 
 
