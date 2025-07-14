@@ -58,7 +58,6 @@ router.get('/:orderId', async (req, res, next) => {
             include: {
                 orderItems: {
                     select: {
-                        id: true,
                         productId: true,
                         quantity: true
                     }
@@ -121,7 +120,8 @@ router.post('/', async (req, res, next) => {
 router.post('/:orderId/items', async (req, res, next) => {
     try {
         const parsedOrderId = parseInt(req.params.orderId);
-        const { productId, quantity } = req.body;
+        const productId = req.body.productId;
+        let quantity = req.body.quantity
 
         if (isNaN(parsedOrderId)) {
             return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
@@ -144,6 +144,10 @@ router.post('/:orderId/items', async (req, res, next) => {
             }
         }
 
+        if (quantity === undefined) {
+            quantity = 1
+        }
+
         const existingProduct = await prisma.product.findUnique({
             where: { id: productId },
         });
@@ -163,10 +167,11 @@ router.post('/:orderId/items', async (req, res, next) => {
         if (existingOrderItem) {
             await prisma.orderItem.update({
                 where: {
-                    id: existingOrderItem.id,
-                    orderId: parsedOrderId
+                    id: existingOrderItem.id
                 },
-                data: { quantity: existingOrderItem.quantity + quantity },
+                data: {
+                    quantity: existingOrderItem.quantity + quantity
+                },
                 include: {
                     product: {
                         select: {
@@ -177,6 +182,7 @@ router.post('/:orderId/items', async (req, res, next) => {
                     }
                 }
             });
+
 
             res.status(201).json({
                 message: "Order item added (updated)!",
@@ -215,7 +221,7 @@ router.post('/:orderId/items', async (req, res, next) => {
             });
 
             res.status(201).json({
-                message: "Order item added (updated)!",
+                message: "Order item added!",
                 product: {
                     id: newOrderItem.productId,
                     quantity: newOrderItem.quantity,
@@ -223,7 +229,7 @@ router.post('/:orderId/items', async (req, res, next) => {
                 },
                 request: {
                     type: 'GET',
-                    url: "http://localhost:3100/" + String(parsedOrderId),
+                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
                     comment: "Look at the order details"
                 }
             })
@@ -249,21 +255,36 @@ router.patch('/:orderId/items', async (req, res, next) => {
         if (!productId) {
             return res.status(500).json({ message: "Choose what do you want to update." })
         }
-        const orderId = parsedInt(req.params.orderId);
+        const orderId = parseInt(req.params.orderId);
 
         const quantity = parseInt(req.body.quantity);
 
-        const orderItemToUpdate = prisma.orderItem.update({
+        const orderItemToUpdate = await prisma.orderItem.update({
             where: {
-                orderId: orderId,
-                productId: productId
+                orderId_productId: {
+                    orderId: orderId,
+                    productId: productId
+                }
             },
             data: {
                 quantity: quantity
             }
         });
-
-        // res.status(204).json({ UPDATED BLABLABLA... })
+        console.log(orderItemToUpdate.productId);
+        console.log(orderItemToUpdate.quantity)
+        res.status(201).json({
+            message: "Order item updated!",
+            product: {
+                id: orderItemToUpdate.productId,
+                quantity: orderItemToUpdate.quantity,
+                orderId: orderId
+            },
+            request: {
+                type: 'GET',
+                url: "http://localhost:3100/orders/" + String(orderId),
+                comment: "Look at the order details"
+            }
+        });
 
 
     }
@@ -280,19 +301,27 @@ router.delete('/:orderId/items', async (req, res, next) => {
         if (!productId) {
             return res.status(500).json({ message: "Choose what item you want to delete." })
         }
-        const orderId = parsedInt(req.params.orderId);
+        const orderId = parseInt(req.params.orderId);
 
-        const quantity = parseInt(req.body.quantity);
+        const existingOrder = prisma.order.findUnique({
+            where: { id: orderId }
+        });
 
-        const orderItemToDelete = prisma.orderItem.update({
+        if (!existingOrder) {
+            return res.status(404).json({ message: `Order with ID ${orderIdrderId} not found.` });
+        }
+
+
+        const orderItemToDelete = await prisma.orderItem.delete({
             where: {
-                orderId: orderId,
-                productId: productId
-            },
-            data: {
-                quantity: quantity
+                orderId_productId: {
+                    orderId: orderId,
+                    productId: productId
+                }
             }
-        })
+        });
+
+        res.status(204).send()
     }
 
     catch (error) {
