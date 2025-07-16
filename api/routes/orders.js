@@ -6,6 +6,42 @@ const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
 
+const { parse, format, endOfMonth, isBefore } = require('date-fns');
+
+const stringDateToJavaDate = (dateString) => {
+    return parse(dateString, 'dd/MM/yyyy', new Date(0))
+}
+
+const JavaDateToStringDate = (date) => {
+    return format(date, 'dd/MM/yyyy')
+}
+
+const isValidDateFormat = (dateString) => {
+    const regex = /^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/;
+    return regex.test(dateString)
+}
+
+const isDeliveringDateBeforeToday = (date) => {
+    if (!date) {
+        return false
+    }
+
+    try {
+
+        const todayDate = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const deliveringDate = new Date(date)
+        return (da)
+    }
+    catch (error) {
+        return console.error(error)
+    }
+}
+// const testDate = '12/12/2025';
+// const testDateConverted = dateInputConverter(testDate);
+// console.log(testDateConverted);
+
 router.get('/', async (req, res, next) => {
     try {
 
@@ -96,7 +132,7 @@ router.get('/', async (req, res, next) => {
             tomorrow.setDate(today.getDate() + 1);
 
 
-            whereClause.dateOrder = {
+            whereClause.deliveringDate = {
                 gte: today,
                 lt: tomorrow
             };
@@ -185,20 +221,33 @@ router.post('/', async (req, res, next) => {
     try {
 
         const parsedClientid = parseInt(req.body.clientId)
+        const dateToDeliver = req.body.deliveringDate;
+
+        if (!isValidDateFormat(dateToDeliver)) {
+            return res.status(400).json({ error: "Please, enter a valid delivering date, in the dd/mm/yyyy format." })
+        }
+
+        if (!isDeliveringDateBeforeToday(stringDateToJavaDate(dateToDeliver))) {
+            return res.status(400).json({ error: "DeliveringDate entered is before today, impossible." })
+        }
 
         const order = await prisma.order.create({
             data: {
-                clientId: parsedClientid
+                clientId: parsedClientid,
+                deliveringDate: stringDateToJavaDate(dateToDeliver)
             }
         });
 
         res.status(201).json({
-            order: order,
+            order: {
+                clientId: order.clientId,
+                deliveringDate: JavaDateToStringDate(dateToDeliver)
+            },
             message: "(empty) order created!",
             request: {
                 type: 'GET',
                 url: 'http://localhost:3100/orders',
-                comment: 'Get all orders?'
+                comment: 'Get all orders, or specific order with the ?id=value query, or orders that need to be delivered today with ?time=today query'
             }
         })
     }

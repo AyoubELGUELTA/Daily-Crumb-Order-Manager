@@ -42,6 +42,7 @@ enum OrderStatus {
 model Order {
   id  Int @id @default(autoincrement())
   dateOrder DateTime @default(now())
+  deliveringDate DateTime 
   orderItems OrderItem[] 
   clientId  Int
   status  OrderStatus @default(INITIALIZED)
