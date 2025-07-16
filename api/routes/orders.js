@@ -9,84 +9,176 @@ const prisma = require('../../prismaClient.js');
 router.get('/', async (req, res, next) => {
     try {
 
+        const { time, id } = req.query;
+        let whereClause = {};
+
+        if (time !== undefined && id !== undefined) {
+            return res.status(400).json({ error: "Please, send a single request between time and id queries, not both at the same time." })
+        }
+
+        if (id !== undefined) {
+            const orderId = parseInt(id)
+            if (!Number.isInteger(orderId)) {
+                return res.status(400).json({ error: "Id requested is not a int." })
+            }
+
+            const singleOrder = await prisma.order.findUnique({
+                where: { id: orderId },
+
+                include: {
+                    orderItems: {
+                        select: {
+                            quantity: true,
+
+                            product: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    price: true
+                                }
+                            }
+                        }
+                    },
+                    client: {
+                        select: {
+                            id: true,
+                            email: true,
+                            name: true
+                        }
+                    }
+
+                }
+
+            })
+
+            if (!singleOrder) {
+                return res.status(404).json({ error: "Order not found for id requested." })
+            }
+
+            const singleResponse =
+            {
+                order:
+                {
+                    id: singleOrder.id,
+                    dateOrder: singleOrder.dateOrder,
+                    status: singleOrder.status,
+                    client: {
+                        id: singleOrder.client?.id,
+                        email: singleOrder.client?.email,
+                        name: singleOrder.client?.name
+                    },
+                    product: singleOrder.orderItems.map((item) => ({
+                        productId: item.product?.id,
+                        productName: item.product?.name,
+                        productPrice: item.product?.price,
+                        quantity: item.quantity
+
+                    })),
+                    request: {
+                        type: 'GET',
+                        url: 'http://localhost:3100/orders/' + singleOrder.id,
+                        comment: 'Click to see the order detail !'
+                    }
+
+                }
+            }
+
+            return res.status(200).json(singleResponse);
+        }
+
+
+
+        if (time === 'today') {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+
+
+            whereClause.dateOrder = {
+                gte: today,
+                lt: tomorrow
+            };
+        }
+
+
         const orders = await prisma.order.findMany({
-            select: {
-                id: true,
-                dateOrder: true,
-                orderItems: true,
-                client: true,
-                clientId: false
+            where: whereClause,
+
+            include: {
+                orderItems: {
+                    select: {
+                        quantity: true,
+
+                        product: {
+                            select: {
+                                id: true,
+                                name: true,
+                                price: true
+                            }
+                        }
+                    }
+                },
+                client: {
+                    select: {
+                        id: true,
+                        email: true,
+                        name: true
+                    }
+                }
+
             }
         });
 
         const response = {
-            total: orders.length,
+            totalOrders: orders.length,
             orders:
                 orders.map(order => ({
                     id: order.id,
                     dateOrder: order.dateOrder,
-                    orderItems: order.orderItems,
-                    client: order.client,
+                    status: order.status,
+                    client: {
+                        id: order.client?.id,
+                        email: order.client?.email,
+                        name: order.client?.name
+                    },
+                    product: order.orderItems.map((item) => ({
+                        productId: item.product?.id,
+                        productName: item.product?.name,
+                        productPrice: item.product?.price,
+                        quantity: item.quantity
+
+                    })),
                     request: {
                         type: 'GET',
                         url: 'http://localhost:3100/orders/' + order.id,
                         comment: 'Click to see the order detail !'
                     }
-                })
-                )
+                }))
 
-        };
-        // res.status(200).json({ message: 'Handling Get all orders successfully' });
-
-        res.status(200).json(response)
-    }
-
-    catch (error) {
-        console.log(error);
-        res.status(500).json({ error: error });
-    }
-});
-
-router.get('/:orderId', async (req, res, next) => {
-
-    try {
-
-        parsedIdOrder = parseInt(req.params.orderId);
-
-        const order = await prisma.order.findUnique({
-            where: { id: parsedIdOrder },
-            include: {
-                orderItems: {
-                    select: {
-                        productId: true,
-                        quantity: true
-                    }
-                },
-                client: true
-            }
-        });
-
-        if (!order) {
-            return res.status(404).json({ error: "Order not found, try another id." })
-        };
-
-        const response = {
-            order: order,
-            request: {
-                type: 'GET',
-                url: 'http://localhost:3100/orders',
-                comment: 'look at all orders'
-            }
         }
-        // res.status(200).json({ message: 'Handling Get a specific product successfully' });
-
         res.status(200).json(response);
 
     }
     catch (error) {
+        console.log(error);
         res.status(500).json({ error: error.message });
     }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 router.post('/', async (req, res, next) => {
 

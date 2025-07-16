@@ -5,7 +5,6 @@ const express = require('express');
 const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
-const { NONAME } = require('dns');
 
 router.post('/', async (req, res, next) => {
     try {

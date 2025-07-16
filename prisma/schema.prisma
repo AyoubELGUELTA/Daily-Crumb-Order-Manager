@@ -32,11 +32,19 @@ model User {
 
 }
 
+enum OrderStatus {
+  PREPARED
+  SHIPPED
+  DELIVERED
+  INITIALIZED
+}
+
 model Order {
   id  Int @id @default(autoincrement())
   dateOrder DateTime @default(now())
   orderItems OrderItem[] 
   clientId  Int
+  status  OrderStatus @default(INITIALIZED)
 
   client Client @relation(fields: [clientId], references: [id])
 
