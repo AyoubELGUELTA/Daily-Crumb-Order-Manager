@@ -23,19 +23,22 @@ const isValidDateFormat = (dateString) => {
 
 const isDeliveringDateBeforeToday = (date) => {
     if (!date) {
-        return false
+        return true
     }
 
     try {
 
         const todayDate = new Date();
-        today.setHours(0, 0, 0, 0);
+        todayDate.setHours(0, 0, 0, 0);
 
-        const deliveringDate = new Date(date)
-        return (da)
+        date.setHours(0, 0, 0, 0);
+        console.log(date);
+        console.log(todayDate);
+        return isBefore(date, todayDate)
     }
     catch (error) {
-        return console.error(error)
+        console.log("Error in isDeliveringDateBeforeToday:", error);
+        return true
     }
 }
 // const testDate = '12/12/2025';
@@ -97,6 +100,7 @@ router.get('/', async (req, res, next) => {
                 {
                     id: singleOrder.id,
                     dateOrder: singleOrder.dateOrder,
+                    deliveringDate: JavaDateToStringDate(singleOrder.deliveringDate),
                     status: singleOrder.status,
                     client: {
                         id: singleOrder.client?.id,
@@ -173,6 +177,7 @@ router.get('/', async (req, res, next) => {
                 orders.map(order => ({
                     id: order.id,
                     dateOrder: order.dateOrder,
+                    deliveringDate: JavaDateToStringDate(order.deliveringDate),
                     status: order.status,
                     client: {
                         id: order.client?.id,
@@ -227,7 +232,7 @@ router.post('/', async (req, res, next) => {
             return res.status(400).json({ error: "Please, enter a valid delivering date, in the dd/mm/yyyy format." })
         }
 
-        if (!isDeliveringDateBeforeToday(stringDateToJavaDate(dateToDeliver))) {
+        if (isDeliveringDateBeforeToday(stringDateToJavaDate(dateToDeliver))) {
             return res.status(400).json({ error: "DeliveringDate entered is before today, impossible." })
         }
 
@@ -241,7 +246,7 @@ router.post('/', async (req, res, next) => {
         res.status(201).json({
             order: {
                 clientId: order.clientId,
-                deliveringDate: JavaDateToStringDate(dateToDeliver)
+                deliveringDate: dateToDeliver
             },
             message: "(empty) order created!",
             request: {
@@ -502,6 +507,79 @@ router.delete('/:orderId', async (req, res, next) => {
 });
 
 
+router.patch('/:orderId', async (req, res, next) => {
+    try {
+
+        const parsedOrderId = parseInt(req.params.orderId);
+        if (!parsedOrderId) {
+            return res.status(500).json({ message: "Choose what order you want to update." })
+        }
+        const { status, deliveringDate } = req.body;
+        if (!status && !deliveringDate) {
+            return res.status(400).json({ error: "Please, choose at least one input between status and the deliveringDate you want to update." })
+        }
+
+        const updateData = {};
+
+        if (status !== undefined) {
+            updateData.status = status;
+        }
+
+
+        let javaDeliveringDate = undefined;
+
+
+
+        if (deliveringDate !== undefined) {
+            if (!isValidDateFormat(deliveringDate)) {
+                return res.status(400).json({ error: "Please, enter a valide delivering date, in the dd/mm/yyyy format." })
+            }
+            javaDeliveringDate = stringDateToJavaDate(deliveringDate);
+
+            if (!javaDeliveringDate) {
+                return res.status(400).json({ error: "Provided delivering date could not be parsed (into real java date)." })
+            }
+
+            if (isDeliveringDateBeforeToday(javaDeliveringDate)) {
+                return res.status(400).json({ error: "DeliveringDate entered is before today, impossible to update." });
+            }
+
+            updateData.deliveringDate = javaDeliveringDate;
+
+        }
+
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ message: "No valid entry provided to patch the order. (Nor status and deliveringDate)." })
+        }
+        const orderToUpdate = await prisma.order.update({
+            where: {
+                id: parsedOrderId
+            },
+            data: updateData
+        });
+        res.status(200).json({
+            message: "Order updated!",
+            order: {
+                id: orderToUpdate.id,
+                deliveringDate: JavaDateToStringDate(orderToUpdate.deliveringDate),
+                status: orderToUpdate.status,
+                clientId: orderToUpdate.clientId
+            },
+            request: {
+                type: 'GET',
+                url: "http://localhost:3100/orders?id=" + String(parsedOrderId),
+                comment: "Look at the order details"
+            }
+        });
+
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 
 
 
