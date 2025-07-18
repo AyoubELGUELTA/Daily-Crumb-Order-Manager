@@ -5,42 +5,7 @@ const express = require('express');
 const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
-
-const { parse, format, endOfMonth, isBefore } = require('date-fns');
-
-const stringDateToJavaDate = (dateString) => {
-    return parse(dateString, 'dd/MM/yyyy', new Date(0))
-}
-
-const JavaDateToStringDate = (date) => {
-    return format(date, 'dd/MM/yyyy')
-}
-
-const isValidDateFormat = (dateString) => {
-    const regex = /^(0[1-9]|[12][0-9]|3[01])\/(0[1-9]|1[0-2])\/\d{4}$/;
-    return regex.test(dateString)
-}
-
-const isDeliveringDateBeforeToday = (date) => {
-    if (!date) {
-        return true
-    }
-
-    try {
-
-        const todayDate = new Date();
-        todayDate.setHours(0, 0, 0, 0);
-
-        date.setHours(0, 0, 0, 0);
-        console.log(date);
-        console.log(todayDate);
-        return isBefore(date, todayDate)
-    }
-    catch (error) {
-        console.log("Error in isDeliveringDateBeforeToday:", error);
-        return true
-    }
-}
+const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js')
 // const testDate = '12/12/2025';
 // const testDateConverted = dateInputConverter(testDate);
 // console.log(testDateConverted);
@@ -48,11 +13,11 @@ const isDeliveringDateBeforeToday = (date) => {
 router.get('/', async (req, res, next) => {
     try {
 
-        const { time, id } = req.query;
+        const { time, planned, id } = req.query;
         let whereClause = {};
 
-        if (time !== undefined && id !== undefined) {
-            return res.status(400).json({ error: "Please, send a single request between time and id queries, not both at the same time." })
+        if (time !== undefined && id !== undefined || planned !== undefined && id !== undefined) {
+            return res.status(400).json({ error: "Please, send a single request between time/planned and id query, not id with one of the other at the same time." })
         }
 
         if (id !== undefined) {
@@ -142,7 +107,19 @@ router.get('/', async (req, res, next) => {
             };
         }
 
+        if (planned !== undefined && isValidDateFormat(planned)) {
+            plannedDate = stringDateToJavaDate(planned);
+            plannedDate.setHours(0, 0, 0, 0)
+            whereClause.dateOrder = plannedDate;
+            console.log(planned, stringDateToJavaDate(planned));
 
+        }
+
+        else if (planned !== undefined && !isValidDateFormat(planned)) {
+            return res.status(400).json({ message: "Please, enter a valid query for 'planned' value, in the dd/mm/yyy format." })
+        }
+
+        console.log(whereClause);
         const orders = await prisma.order.findMany({
             where: whereClause,
 
@@ -176,7 +153,7 @@ router.get('/', async (req, res, next) => {
             orders:
                 orders.map(order => ({
                     id: order.id,
-                    dateOrder: order.dateOrder,
+                    dateOrder: JavaDateToStringDate(order.dateOrder),
                     deliveringDate: JavaDateToStringDate(order.deliveringDate),
                     status: order.status,
                     client: {
@@ -184,7 +161,7 @@ router.get('/', async (req, res, next) => {
                         email: order.client?.email,
                         name: order.client?.name
                     },
-                    product: order.orderItems.map((item) => ({
+                    products: order.orderItems.map((item) => ({
                         productId: item.product?.id,
                         productName: item.product?.name,
                         productPrice: item.product?.price,
@@ -199,9 +176,10 @@ router.get('/', async (req, res, next) => {
                 }))
 
         }
-        res.status(200).json(response);
+        return res.status(200).json(response);
 
     }
+
     catch (error) {
         console.log(error);
         res.status(500).json({ error: error.message });

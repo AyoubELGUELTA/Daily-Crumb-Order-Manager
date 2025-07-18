@@ -6,6 +6,8 @@ const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
 
+const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js')
+
 router.post('/', async (req, res, next) => {
     try {
         const newClient = await prisma.client.create({
@@ -68,9 +70,68 @@ router.get('/', async (req, res, next) => {
 
 router.get('/:clientId', async (req, res, next) => {
 
+
     try {
 
         parsedIdClient = parseInt(req.params.clientId);
+
+        const orders = req.query.history;
+
+        if (orders === "all") {
+
+            const allClientOrders = await prisma.order.findMany({
+                where: { clientId: parsedIdClient },
+
+                include: {
+                    client: {
+                        select: {
+                            id: true,
+                            email: true
+                        }
+
+                    },
+                    orderItems: {
+                        select: {
+                            product: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    price: true
+                                }
+                            },
+                            quantity: true
+                        }
+                    }
+                },
+                orderBy: {
+                    deliveringDate: 'asc'
+                }
+            })
+
+            const response = {
+                allClientOrders: allClientOrders.map(order => ({
+                    id: order.id,
+                    dateOrder: order.dateOrder,
+                    deliveringDate: JavaDateToStringDate(order.deliveringDate),
+                    status: order.status,
+                    products: order.orderItems.map((item) => ({
+                        productId: item.product?.id,
+                        productName: item.product?.name,
+                        productPrice: item.product?.price,
+                        quantity: item.quantity
+
+                    })),
+                    request: {
+                        type: 'GET',
+                        url: 'http://localhost:3100/orders/' + order.id,
+                        comment: 'Click to see the order detail !'
+                    }
+                }))
+            }
+
+            return res.status(200).json(response)
+        }
+
 
         const client = await prisma.client.findUnique({
             where: { id: parsedIdClient },
@@ -107,7 +168,7 @@ router.get('/:clientId', async (req, res, next) => {
 
     }
     catch (error) {
-        res.status(500).json({ error: error });
+        res.status(500).json({ error: error.message });
     }
 });
 
