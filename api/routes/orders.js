@@ -5,7 +5,10 @@ const express = require('express');
 const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
-const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js')
+const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js');
+
+const { startOfDay, addDays } = require('date-fns');
+const { start } = require('repl');
 // const testDate = '12/12/2025';
 // const testDateConverted = dateInputConverter(testDate);
 // console.log(testDateConverted);
@@ -16,81 +19,85 @@ router.get('/', async (req, res, next) => {
         const { time, planned, id } = req.query;
         let whereClause = {};
 
-        if (time !== undefined && id !== undefined || planned !== undefined && id !== undefined) {
-            return res.status(400).json({ error: "Please, send a single request between time/planned and id query, not id with one of the other at the same time." })
-        }
 
-        if (id !== undefined) {
-            const orderId = parseInt(id)
-            if (!Number.isInteger(orderId)) {
-                return res.status(400).json({ error: "Id requested is not a int." })
+        const queryParamsCount = [time, planned, id].filter(param => param !== undefined).length;
+        if (queryParamsCount > 1) {
+
+            if (time !== undefined && id !== undefined || planned !== undefined && id !== undefined) {
+                return res.status(400).json({ error: "Please, send a single request between time/planned and id query, not id with one of the other at the same time." })
             }
 
-            const singleOrder = await prisma.order.findUnique({
-                where: { id: orderId },
+            if (id !== undefined) {
+                const orderId = parseInt(id)
+                if (!Number.isInteger(orderId)) {
+                    return res.status(400).json({ error: "Id requested is not a int." })
+                }
 
-                include: {
-                    orderItems: {
-                        select: {
-                            quantity: true,
+                const singleOrder = await prisma.order.findUnique({
+                    where: { id: orderId },
 
-                            product: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    price: true
+                    include: {
+                        orderItems: {
+                            select: {
+                                quantity: true,
+
+                                product: {
+                                    select: {
+                                        id: true,
+                                        name: true,
+                                        price: true
+                                    }
                                 }
                             }
+                        },
+                        client: {
+                            select: {
+                                id: true,
+                                email: true,
+                                name: true
+                            }
                         }
-                    },
-                    client: {
-                        select: {
-                            id: true,
-                            email: true,
-                            name: true
-                        }
+
                     }
 
+                })
+
+                if (!singleOrder) {
+                    return res.status(404).json({ error: "Order not found for id requested." })
                 }
 
-            })
-
-            if (!singleOrder) {
-                return res.status(404).json({ error: "Order not found for id requested." })
-            }
-
-            const singleResponse =
-            {
-                order:
+                const singleResponse =
                 {
-                    id: singleOrder.id,
-                    dateOrder: singleOrder.dateOrder,
-                    deliveringDate: JavaDateToStringDate(singleOrder.deliveringDate),
-                    status: singleOrder.status,
-                    client: {
-                        id: singleOrder.client?.id,
-                        email: singleOrder.client?.email,
-                        name: singleOrder.client?.name
-                    },
-                    product: singleOrder.orderItems.map((item) => ({
-                        productId: item.product?.id,
-                        productName: item.product?.name,
-                        productPrice: item.product?.price,
-                        quantity: item.quantity
+                    order:
+                    {
+                        id: singleOrder.id,
+                        dateOrder: singleOrder.dateOrder,
+                        deliveringDate: JavaDateToStringDate(singleOrder.deliveringDate),
+                        status: singleOrder.status,
+                        client: {
+                            id: singleOrder.client?.id,
+                            email: singleOrder.client?.email,
+                            name: singleOrder.client?.name
+                        },
+                        product: singleOrder.orderItems.map((item) => ({
+                            productId: item.product?.id,
+                            productName: item.product?.name,
+                            productPrice: item.product?.price,
+                            quantity: item.quantity
 
-                    })),
-                    request: {
-                        type: 'GET',
-                        url: 'http://localhost:3100/orders/' + singleOrder.id,
-                        comment: 'Click to see the order detail !'
+                        })),
+                        request: {
+                            type: 'GET',
+                            url: 'http://localhost:3100/orders/' + singleOrder.id,
+                            comment: 'Click to see the order detail !'
+                        }
+
                     }
-
                 }
+
+                return res.status(200).json(singleResponse);
             }
-
-            return res.status(200).json(singleResponse);
         }
-
 
 
         if (time === 'today') {
@@ -107,19 +114,25 @@ router.get('/', async (req, res, next) => {
             };
         }
 
-        if (planned !== undefined && isValidDateFormat(planned)) {
-            plannedDate = stringDateToJavaDate(planned);
-            plannedDate.setHours(0, 0, 0, 0)
-            whereClause.dateOrder = plannedDate;
-            console.log(planned, stringDateToJavaDate(planned));
 
-        }
 
-        else if (planned !== undefined && !isValidDateFormat(planned)) {
+
+        if (planned !== undefined && !isValidDateFormat(planned)) {
+
             return res.status(400).json({ message: "Please, enter a valid query for 'planned' value, in the dd/mm/yyy format." })
         }
+        else if (planned !== undefined) {
+            const plannedDate = stringDateToJavaDate(planned);
+            const plannedDayStart = startOfDay(plannedDate);
+            const nextPlannedDayStart = addDays(plannedDayStart, 1);
 
-        console.log(whereClause);
+            whereClause.dateOrder = {
+                gte: plannedDayStart,
+                lt: nextPlannedDayStart
+            };
+
+
+        }
         const orders = await prisma.order.findMany({
             where: whereClause,
 
@@ -560,7 +573,51 @@ router.patch('/:orderId', async (req, res, next) => {
 });
 
 
+router.get('/stats', async (req, res, next) => {
+    try {
+        const { fromPeriod, toPeriod } = req.query;
+        let whereClause = {};
 
+
+        const queryParamsCount = [fromPeriod, toPeriod].filter(param => param !== undefined).length;
+        if (queryParamsCount === 1 && (fromPeriod || toPeriod)) {
+            res.status(400).json({ error: "Please, enter two queries to determinate a period duration (you can also put the same date in both fields times to know the number of orders in this day" })
+        }
+        if (queryParamsCount > 1) {
+
+            if (fromPeriod && toPeriod)
+                if (!isValidDateFormat(fromPeriod) || !isValidDateFormat(toPeriod)) {
+                    res.status(400).json({ error: "Date provided does not fulfill the dd/mm/yyyy format, please try again respecting this format." })
+                }
+
+            const startPeriod = stringDateToJavaDate(fromPeriod);
+            const endPeriod = stringDateToJavaDate(toPeriod);
+
+            startPeriod.setHours(0, 0, 0, 0);
+            endPeriod.setHours(23, 59, 59, 9999);
+            if (!startPeriod || !endPeriod) {
+                res.status(400).json({ error: "Date provided could not be interpreted as java date." })
+            };
+
+            whereClause.deliveringDate = {
+                gte: startPeriod,
+                lt: endPeriod
+            };
+
+            const nbOfOrders = await prisma.order.count({
+                where: whereClause
+            });
+
+            res.status(200).json({
+                filter: `From ${fromPeriod} to ${toPeriod}`,
+                count: nbOfOrders
+            })
+        }
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+})
 
 
 
