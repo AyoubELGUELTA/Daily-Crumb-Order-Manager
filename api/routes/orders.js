@@ -575,7 +575,7 @@ router.patch('/:orderId', async (req, res, next) => {
 
 router.get('/stats', async (req, res, next) => {
     try {
-        const { fromPeriod, toPeriod } = req.query;
+        const { fromPeriod, toPeriod, popularProducts } = req.query;
         let whereClause = {};
 
 
@@ -608,10 +608,64 @@ router.get('/stats', async (req, res, next) => {
                 where: whereClause
             });
 
-            res.status(200).json({
+            return res.status(200).json({
                 filter: `From ${fromPeriod} to ${toPeriod}`,
                 count: nbOfOrders
             })
+        }
+
+        if (popularProducts) {
+            const popProducts = ParseInt(popularProducts)
+
+            if (!Number.isInteger(popProducts)) {
+                return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
+            }
+
+            if (popProducts < 1) {
+                return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
+            }
+
+            const popularProductsSorted = await prisma.product.groupBy({
+                by: ['productId'],
+                _sum: {
+                    quantity: 'desc'
+                },
+                orderBy: {
+                    _sum: {
+                        quantity: 'desc'
+                    }
+                },
+                take: popProducts
+            })
+
+            const productIds = popularProductsSorted.map(item => item.productId)
+            console.log(productIds)
+
+            const productDetails = await prisma.product.findMany({
+                where: {
+                    id: {
+                        in: productIds
+                    }
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    price: true
+                }
+            });
+
+            const formattedPopularProducts = popularProductsSorted.map(item => {
+                const product = productDetails.find(product => product.id === item.productid)
+
+                return {
+                    productId: item.productId,
+                    productName: product ? product.name : "Unknown product",
+                    productPrice: product ? product.price : null,
+                    totalQuantityOrdered: item._sum.quantity,
+
+                }
+            })
+
         }
     }
     catch (error) {
