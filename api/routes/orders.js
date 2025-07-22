@@ -5,10 +5,13 @@ const express = require('express');
 const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
+
 const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js');
 
 const { startOfDay, addDays } = require('date-fns');
 const { start } = require('repl');
+
+const ENUMS_ORDERS_STATUS = ["PREPARED", "INITIALIZED", "SHIPPED", "DELIVERED"]
 // const testDate = '12/12/2025';
 // const testDateConverted = dateInputConverter(testDate);
 // console.log(testDateConverted);
@@ -16,12 +19,12 @@ const { start } = require('repl');
 router.get('/', async (req, res, next) => {
     try {
 
-        const { time, planned, id } = req.query;
+        const { time, planned, id, clientId, productId, status } = req.query;
         let whereClause = {};
 
 
         const queryParamsCount = [time, planned, id].filter(param => param !== undefined).length;
-        if (queryParamsCount > 1) {
+        if (queryParamsCount > 0) {
 
             if (time !== undefined && id !== undefined || planned !== undefined && id !== undefined) {
                 return res.status(400).json({ error: "Please, send a single request between time/planned and id query, not id with one of the other at the same time." })
@@ -73,6 +76,7 @@ router.get('/', async (req, res, next) => {
                         id: singleOrder.id,
                         dateOrder: singleOrder.dateOrder,
                         deliveringDate: JavaDateToStringDate(singleOrder.deliveringDate),
+                        paidAt: JavaDateToStringDate(singleOrder.paidAt),
                         status: singleOrder.status,
                         client: {
                             id: singleOrder.client?.id,
@@ -133,6 +137,59 @@ router.get('/', async (req, res, next) => {
 
 
         }
+
+        if (!clientId) {
+            parsedClientId = parseInt(clientId);
+
+            if (!Number.isInteger(parsedClientId)) {
+                return res.status(400).json({ error: "Incorrect value for clientId was passed, please enter a valid Int number." })
+            }
+            const clientQuery = await prisma.client.findUnique({
+                where: { id: parsedClientId }
+            });
+
+            if (!clientQuery) {
+                return res.status(404).json({ error: "clientId passed in query was not found in the database, please re-check your clientId." })
+            }
+
+            whereClause.clientId = parsedClientId;
+
+        };
+
+        if (!productId) {
+            parsedProductId = parseInt(productId);
+
+            if (!Number.isInteger(parsedProductId)) {
+                return res.status(400).json({ error: "Incorrect value for productId was passed, please enter a valid Int number." })
+            }
+            const productQuery = await prisma.product.findUnique({
+                where: { id: parsedProductId }
+            });
+
+            if (!productQuery) {
+                return res.status(404).json({ error: "productId passed in query was not found in the database, please re-check your clientId." })
+            }
+
+            whereClause.orderItems = {
+                some: {
+                    productId: parsedProductId
+                }
+            }
+
+        };
+
+        if (!status) {
+            if (!ENUMS_ORDERS_STATUS.includes(status)) {
+                return res.status(400).json({ error: "Please, enter a valid status among this list: ['PREPARED', 'INITIALIZED', 'SHIPPED', 'DELIVERED']" })
+            }
+
+            whereClause.status = status;
+
+        };
+
+
+
+
         const orders = await prisma.order.findMany({
             where: whereClause,
 
@@ -257,7 +314,8 @@ router.post('/', async (req, res, next) => {
 router.post('/:orderId/items', async (req, res, next) => {
     try {
         const parsedOrderId = parseInt(req.params.orderId);
-        const productId = req.body.productId;
+        const productId = parseInt(req.body.productId);
+
         let quantity = req.body.quantity
 
         if (isNaN(parsedOrderId)) {
@@ -294,17 +352,22 @@ router.post('/:orderId/items', async (req, res, next) => {
 
 
 
-        const existingOrderItem = await prisma.orderItem.findFirst({
+        const existingOrderItem = await prisma.orderItem.findUnique({
             where: {
-                orderId: parsedOrderId,
-                productId: productId
+                orderId_productId: {
+                    orderId: parsedOrderId,
+                    productId: productId
+                }
             }
         });
 
         if (existingOrderItem) {
             await prisma.orderItem.update({
                 where: {
-                    id: existingOrderItem.id
+                    orderId_productId: {
+                        orderId: parsedOrderId,
+                        productId: productId
+                    }
                 },
                 data: {
                     quantity: existingOrderItem.quantity + quantity
@@ -514,7 +577,15 @@ router.patch('/:orderId', async (req, res, next) => {
 
         if (status !== undefined) {
             updateData.status = status;
+
+            if (updateData.status === 'PREPARED') {
+                const today = new Date();
+                console.log(today)
+                updateData.paidAt = today
+            }
+
         }
+
 
 
         let javaDeliveringDate = undefined;
@@ -575,7 +646,7 @@ router.patch('/:orderId', async (req, res, next) => {
 
 router.get('/stats', async (req, res, next) => {
     try {
-        const { fromPeriod, toPeriod, popularProducts } = req.query;
+        const { fromPeriod, toPeriod, popularProducts, sales } = req.query;
         let whereClause = {};
 
 
@@ -599,73 +670,120 @@ router.get('/stats', async (req, res, next) => {
                 res.status(400).json({ error: "Date provided could not be interpreted as java date." })
             };
 
-            whereClause.deliveringDate = {
-                gte: startPeriod,
-                lt: endPeriod
-            };
+            if (!sales) {
+                whereClause.deliveringDate = {
+                    gte: startPeriod,
+                    lt: endPeriod
+                };
 
-            const nbOfOrders = await prisma.order.count({
-                where: whereClause
-            });
+                const nbOfOrders = await prisma.order.count({
+                    where: whereClause
+                });
 
-            return res.status(200).json({
-                filter: `From ${fromPeriod} to ${toPeriod}`,
-                count: nbOfOrders
-            })
-        }
+                return res.status(200).json({
+                    filter: `From ${fromPeriod} to ${toPeriod}`,
+                    count: nbOfOrders
+                })
+            }
+            if (sales === 'true' || 'True' || 'TRUE') {
+                const paidOrdersInPeriod = await prisma.order.findMany({
+                    where: {
+                        paidAt: {
+                            gte: startPeriod,
+                            lt: endPeriod
+                        }
+                    },
+                    include: {
+                        orderItems: {
+                            include: {
+                                product: {
+                                    select: {
+                                        price: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
 
-        if (popularProducts) {
-            const popProducts = ParseInt(popularProducts)
+                let totalRevenue = 0;
 
-            if (!Number.isInteger(popProducts)) {
-                return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
+                paidOrdersInPeriod.forEach(order => {
+                    order.orderItems.forEach(item => {
+                        if (item.product && typeof item.product.price === 'number') {
+                            totalRevenue += item.quantity * item.product.price
+                        }
+                    })
+                })
+
+                return res.status(200).json({
+                    message: `The total revenue from ${JavaDateToStringDate(startPeriod)} to ${JavaDateToStringDate(endPeriod)}.`,
+                    totalRevenue: totalRevenue
+                })
             }
 
-            if (popProducts < 1) {
-                return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
-            }
 
-            const popularProductsSorted = await prisma.product.groupBy({
-                by: ['productId'],
-                _sum: {
-                    quantity: 'desc'
-                },
-                orderBy: {
+
+
+            if (popularProducts) {
+                const popProducts = parseInt(popularProducts)
+
+                if (!Number.isInteger(popProducts)) {
+                    return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
+                }
+
+                if (popProducts < 1) {
+                    return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
+                }
+
+                console.log(popProducts);
+
+                const popularProductsSorted = await prisma.orderItem.groupBy({
+                    by: ['productId'],
                     _sum: {
-                        quantity: 'desc'
+                        quantity: true
+                    },
+                    orderBy: {
+                        _sum: {
+                            quantity: 'desc'
+                        }
+                    },
+                    take: popProducts
+                })
+
+                const productIds = popularProductsSorted.map(item => item.productId)
+                console.log(productIds)
+                const productDetails = await prisma.product.findMany({
+                    where: {
+                        id: {
+                            in: productIds
+                        }
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        price: true
                     }
-                },
-                take: popProducts
-            })
+                });
 
-            const productIds = popularProductsSorted.map(item => item.productId)
-            console.log(productIds)
+                const formattedPopularProducts = popularProductsSorted.map(item => {
+                    const product = productDetails.find(product => product.id === item.productId)
 
-            const productDetails = await prisma.product.findMany({
-                where: {
-                    id: {
-                        in: productIds
+                    return {
+                        productId: item.productId,
+                        productName: product ? product.name : "Unknown product",
+                        productPrice: product ? product.price : null,
+                        totalQuantityOrdered: item._sum.quantity,
+
                     }
-                },
-                select: {
-                    id: true,
-                    name: true,
-                    price: true
-                }
-            });
+                })
 
-            const formattedPopularProducts = popularProductsSorted.map(item => {
-                const product = productDetails.find(product => product.id === item.productid)
+                return res.status(200).json({
+                    listPopProductIds: productIds,
+                    popularProducts: formattedPopularProducts
+                })
 
-                return {
-                    productId: item.productId,
-                    productName: product ? product.name : "Unknown product",
-                    productPrice: product ? product.price : null,
-                    totalQuantityOrdered: item._sum.quantity,
-
-                }
-            })
-
+            }
         }
     }
     catch (error) {

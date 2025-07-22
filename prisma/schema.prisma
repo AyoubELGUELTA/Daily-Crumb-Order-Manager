@@ -45,6 +45,7 @@ model Order {
   deliveringDate DateTime 
   orderItems OrderItem[] 
   clientId  Int
+  paidAt DateTime?
   status  OrderStatus @default(INITIALIZED)
 
   client Client @relation(fields: [clientId], references: [id])
