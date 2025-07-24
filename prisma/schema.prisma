@@ -23,15 +23,6 @@ model Product {
   
 }
 
-model User {
-  id  Int @id @default(autoincrement())
-  email String @unique
-  password String 
-  role String
-
-
-}
-
 enum OrderStatus {
   PREPARED
   SHIPPED
@@ -72,5 +63,21 @@ model Client {
   orders Order[]
 }
 
+
+enum UserRole {
+  Admin
+  Employee
+}
+
+
+model User {
+  id  Int @id @default(autoincrement())
+  email String @unique
+  password String 
+  name String?
+  role UserRole
+
+
+}
 
 

@@ -17,8 +17,11 @@
   "dependencies": {
     "@prisma/client": "^6.11.1",
     "@prisma/extension-accelerate": "^2.0.2",
+    "bcrypt": "^6.0.0",
     "date-fns": "^4.1.0",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "password-validator": "^5.3.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.10",
