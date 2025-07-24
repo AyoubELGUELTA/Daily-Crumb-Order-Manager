@@ -23,7 +23,7 @@ router.get('/', async (req, res, next) => {
         let whereClause = {};
 
 
-        const queryParamsCount = [time, planned, id].filter(param => param !== undefined).length;
+        const queryParamsCount = [time, planned, id, status, productId, clientId].filter(param => param !== undefined).length;
         if (queryParamsCount > 0) {
 
             if (time !== undefined && id !== undefined || planned !== undefined && id !== undefined) {
@@ -101,93 +101,93 @@ router.get('/', async (req, res, next) => {
 
                 return res.status(200).json(singleResponse);
             }
-        }
-
-
-        if (time === 'today') {
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-
-            const tomorrow = new Date(today);
-            tomorrow.setDate(today.getDate() + 1);
-
-
-            whereClause.deliveringDate = {
-                gte: today,
-                lt: tomorrow
-            };
-        }
 
 
 
+            if (time === 'today') {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
 
-        if (planned !== undefined && !isValidDateFormat(planned)) {
-
-            return res.status(400).json({ message: "Please, enter a valid query for 'planned' value, in the dd/mm/yyy format." })
-        }
-        else if (planned !== undefined) {
-            const plannedDate = stringDateToJavaDate(planned);
-            const plannedDayStart = startOfDay(plannedDate);
-            const nextPlannedDayStart = addDays(plannedDayStart, 1);
-
-            whereClause.dateOrder = {
-                gte: plannedDayStart,
-                lt: nextPlannedDayStart
-            };
+                const tomorrow = new Date(today);
+                tomorrow.setDate(today.getDate() + 1);
 
 
-        }
-
-        if (!clientId) {
-            parsedClientId = parseInt(clientId);
-
-            if (!Number.isInteger(parsedClientId)) {
-                return res.status(400).json({ error: "Incorrect value for clientId was passed, please enter a valid Int number." })
-            }
-            const clientQuery = await prisma.client.findUnique({
-                where: { id: parsedClientId }
-            });
-
-            if (!clientQuery) {
-                return res.status(404).json({ error: "clientId passed in query was not found in the database, please re-check your clientId." })
+                whereClause.deliveringDate = {
+                    gte: today,
+                    lt: tomorrow
+                };
             }
 
-            whereClause.clientId = parsedClientId;
 
-        };
 
-        if (!productId) {
-            parsedProductId = parseInt(productId);
 
-            if (!Number.isInteger(parsedProductId)) {
-                return res.status(400).json({ error: "Incorrect value for productId was passed, please enter a valid Int number." })
+            if (planned !== undefined && !isValidDateFormat(planned)) {
+
+                return res.status(400).json({ message: "Please, enter a valid query for 'planned' value, in the dd/mm/yyy format." })
             }
-            const productQuery = await prisma.product.findUnique({
-                where: { id: parsedProductId }
-            });
+            else if (planned !== undefined) {
+                const plannedDate = stringDateToJavaDate(planned);
+                const plannedDayStart = startOfDay(plannedDate);
+                const nextPlannedDayStart = addDays(plannedDayStart, 1);
 
-            if (!productQuery) {
-                return res.status(404).json({ error: "productId passed in query was not found in the database, please re-check your clientId." })
+                whereClause.dateOrder = {
+                    gte: plannedDayStart,
+                    lt: nextPlannedDayStart
+                };
+
+
             }
 
-            whereClause.orderItems = {
-                some: {
-                    productId: parsedProductId
+            if (clientId) {
+                parsedClientId = parseInt(clientId);
+
+                if (!Number.isInteger(parsedClientId)) {
+                    return res.status(400).json({ error: "Incorrect value for clientId was passed, please enter a valid Int number." })
                 }
-            }
+                const clientQuery = await prisma.client.findUnique({
+                    where: { id: parsedClientId }
+                });
 
-        };
+                if (!clientQuery) {
+                    return res.status(404).json({ error: "clientId passed in query was not found in the database, please re-check your clientId." })
+                }
 
-        if (!status) {
-            if (!ENUMS_ORDERS_STATUS.includes(status)) {
-                return res.status(400).json({ error: "Please, enter a valid status among this list: ['PREPARED', 'INITIALIZED', 'SHIPPED', 'DELIVERED']" })
-            }
+                whereClause.clientId = parsedClientId;
 
-            whereClause.status = status;
+            };
 
-        };
+            if (productId) {
+                parsedProductId = parseInt(productId);
 
+                if (!Number.isInteger(parsedProductId)) {
+                    return res.status(400).json({ error: "Incorrect value for productId was passed, please enter a valid Int number." })
+                }
+                const productQuery = await prisma.product.findUnique({
+                    where: { id: parsedProductId }
+                });
 
+                if (!productQuery) {
+                    return res.status(404).json({ error: "productId passed in query was not found in the database, please re-check your clientId." })
+                }
+
+                whereClause.orderItems = {
+                    some: {
+                        productId: parsedProductId
+                    }
+                }
+
+            };
+
+            if (status) {
+                if (!ENUMS_ORDERS_STATUS.includes(status)) {
+                    return res.status(400).json({ error: "Please, enter a valid status among this list: ['PREPARED', 'INITIALIZED', 'SHIPPED', 'DELIVERED']" })
+                }
+
+                whereClause.status = status;
+
+            };
+
+        }
 
 
         const orders = await prisma.order.findMany({
@@ -225,6 +225,7 @@ router.get('/', async (req, res, next) => {
                     id: order.id,
                     dateOrder: JavaDateToStringDate(order.dateOrder),
                     deliveringDate: JavaDateToStringDate(order.deliveringDate),
+                    paidAt: JavaDateToStringDate(order.paidAt),
                     status: order.status,
                     client: {
                         id: order.client?.id,
