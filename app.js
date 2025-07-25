@@ -7,6 +7,7 @@ app.use(express.json());
 const productRoutes = require('./api/routes/products');
 const orderRoutes = require('./api/routes/orders');
 const clientRoutes = require('./api/routes/clients');
+const userRoutes = require('./api/routes/users');
 
 
 app.use((req, res, next) => {
@@ -24,6 +25,6 @@ app.use((req, res, next) => {
 app.use('/products', productRoutes);
 app.use('/orders', orderRoutes);
 app.use('/clients', clientRoutes);
-
+app.use('/users', userRoutes);
 
 module.exports = app;

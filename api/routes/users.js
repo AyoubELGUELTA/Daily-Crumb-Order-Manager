@@ -10,6 +10,9 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const PasswordValidator = require('password-validator');
 
+const authenticateToken = require('../middlewares/auth.js');
+
+
 
 const schemaPassword = new PasswordValidator();
 
@@ -27,9 +30,10 @@ router.post('/signup', async (req, res, next) => {
         const password = req.body.password;
         const name = req.body.name;
         const role = req.body.role;
+        const keyRole = req.body.keyRole;
 
-        if (!email || !password || !role) {
-            return res.status(400).json({ message: "Please, be sure to enter an email and a password, and to define your status aswell." })
+        if (!email || !password || !role || !keyRole) {
+            return res.status(400).json({ message: "Please, be sure to enter an email and a password, and to define your role with its key aswell." })
         }
 
         if (!schemaPassword.validate(password)) {
@@ -43,9 +47,12 @@ router.post('/signup', async (req, res, next) => {
         if (reqNewUser) {
             return res.status(400).json({ message: "Email already used by another user." })
         }
+        else if ((role === 'Admin' && keyRole !== process.env.ADMIN_KEY_SIGNUP) || (role === 'Employee' && keyRole !== process.env.EMPLOYEE_KEY_SIGNUP)) {
+            return res.status(400).json({ message: "The key of your role does not fit to your associated role." })
+        }
         else {
             const hash = await bcrypt.hash(password, 10)
-            const newUser = await prisma.user.create({
+            await prisma.user.create({
                 data: {
                     email: email,
                     password: hash,
@@ -71,4 +78,88 @@ router.post('/signup', async (req, res, next) => {
 })
 
 
+router.post('/login', async (req, res, next) => {
+
+    try {
+        const email = req.body.email;
+        const password = req.body.password;
+
+        if (!email || !password) {
+            return res.status(400).json({ message: "Both password and email are required to login." })
+        }
+
+        const checkUser = await prisma.user.findUnique({
+            where: { email: email }
+        });
+
+        if (!checkUser) {
+            return res.status(404).json({ message: "Authentification failed. Please make sure your password and email are correct." })
+        }
+        else {
+
+            const checkPassword = await bcrypt.compare(password, checkUser.password)
+
+            if (checkPassword === false) {
+                return res.status(404).json({ message: "Authentification failed. Please make sure your password and email are correct." })
+            }
+
+            else {
+                const token = jwt.sign({
+                    email: checkUser.email,
+                    userId: checkUser.id,
+                    userRole: checkUser.role
+                }, process.env.JWT_KEY,
+                    { expiresIn: "1h" }
+                );
+
+                return res.status(200).json({
+                    message: "Authentification successful",
+                    token: token
+                })
+            }
+
+        }
+
+    }
+
+
+    catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+
+
+})
+
+
+router.delete('/:userId', authenticateToken, async (req, res) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
+
+    const userIdToDelete = parseInt(req.params.userId);
+
+    try {
+
+        const userToDelete = await prisma.user.findUnique({
+            where: { id: userIdToDelete }
+        });
+
+        if (!userToDelete) return res.sendStatus(404);
+
+        else {
+            await prisma.user.delete({
+                where: { id: userIdToDelete }
+            });
+
+            return res.sendStatus(204)
+        }
+    } catch (err) {
+
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
 module.exports = router;
+
+
