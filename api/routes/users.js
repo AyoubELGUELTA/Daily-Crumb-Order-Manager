@@ -11,6 +11,9 @@ const jwt = require('jsonwebtoken');
 const PasswordValidator = require('password-validator');
 
 const authenticateToken = require('../middlewares/auth.js');
+const crypto = require('crypto');
+
+const { sendVerificationEmail } = require('../services/emailServices.js');
 
 
 
@@ -51,20 +54,41 @@ router.post('/signup', async (req, res, next) => {
             return res.status(400).json({ message: "The key of your role does not fit to your associated role." })
         }
         else {
+
+            const stringToken = crypto.randomBytes(32).toString('hex');
+            const expirationDate = new Date();
+
+            expirationDate.setMinutes(expirationDate.getMinutes() + 15);
             const hash = await bcrypt.hash(password, 10)
-            await prisma.user.create({
+            const userCreated = await prisma.user.create({
                 data: {
                     email: email,
                     password: hash,
                     name: name || "Unknown",
-                    role: role
+                    role: role,
+                    is_email_verified: false
 
                 }
             });
+            const verificationToken = jwt.sign({
+                stringChecker: stringToken,
+                userId: userCreated.id
+            }, process.env.JWT_SECRET,
+                { expiresIn: "30m" }
+            );
+            console.log(userCreated.email, verificationToken);
+            const emailSent = await sendVerificationEmail(userCreated.email, verificationToken);
 
-            return res.status(201).json({
-                message: "New user signed up!"
-            })
+            if (emailSent) {
+                return res.status(201).json({
+                    message: 'Inscription réussie. Veuillez vérifier votre e-mail pour activer votre compte.'
+                });
+            } else {
+                return res.status(500).json({
+                    message: 'Inscription réussie, mais échec de l\'envoi de l\'e-mail de vérification.'
+                });
+            }
+
 
         }
     }
@@ -77,7 +101,46 @@ router.post('/signup', async (req, res, next) => {
 
 })
 
+router.get('/verifyEmail', async (req, res, next) => {
+    try {
+        const token = req.query.token;
 
+        if (!token) {
+            return res.status(400).json({ error: "Error, token missing." })
+        }
+
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        const userId = decoded.userId;
+        const user = prisma.user.findFirst({
+            where: { id: userId }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: "Validation Token invalid." })
+        }
+
+        else {
+            await prisma.user.update({
+                where: { id: userId },
+                data: {
+                    is_email_verified: true
+                }
+            })
+
+            return res.status(200).json({ message: "Email was successfully verified" })
+        }
+
+
+    }
+
+    catch (error) {
+        res.status(500).json({
+            error: error.message,
+            message: "Token invalid or expired."
+        })
+    }
+})
 router.post('/login', async (req, res, next) => {
 
     try {
@@ -108,7 +171,7 @@ router.post('/login', async (req, res, next) => {
                     email: checkUser.email,
                     userId: checkUser.id,
                     userRole: checkUser.role
-                }, process.env.JWT_KEY,
+                }, process.env.JWT_SECRET,
                     { expiresIn: "1h" }
                 );
 
@@ -158,6 +221,63 @@ router.delete('/:userId', authenticateToken, async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+
+router.get('/', authenticateToken, async (req, res) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can look at the users' });
+    }
+    try {
+
+        const userId = parseInt(req.query.userId);
+        const userRole = req.query.userRole;
+        let whereClause = {};
+
+        if (userId) {
+            const existingUser = await prisma.user.findUnique({
+                where: { id: userId }
+            })
+
+            if (!existingUser) {
+                return res.sendStatus(404)
+            }
+
+            else {
+                return res.status(200).json({
+                    email: existingUser.email,
+                    name: existingUser.name || "Unknown",
+                    id: existingUser.id,
+                    role: existingUser.role
+                })
+            }
+        } else {
+
+            if (userRole) {
+                whereClause.role = userRole;
+            }
+            const allUsers = await prisma.user.findMany({
+                where: whereClause
+            })
+
+            const response = {
+                totalCount: allUsers.length,
+                users: allUsers.map(user => ({
+                    id: user.id,
+                    role: user.role,
+                    email: user.email,
+                    name: user.name || "Unknown"
+                }))
+            };
+
+            return res.status(200).json(response);
+
+        }
+    }
+
+    catch (error) {
+        return res.status(500).json({ error: error.message });
+    }
+})
 
 
 module.exports = router;

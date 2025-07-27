@@ -67,6 +67,7 @@ model Client {
 enum UserRole {
   Admin
   Employee
+  Client
 }
 
 
@@ -76,6 +77,8 @@ model User {
   password String 
   name String?
   role UserRole
+  is_email_verified Boolean @default(false)
+
 
 
 }
