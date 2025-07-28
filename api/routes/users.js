@@ -43,11 +43,11 @@ router.post('/signup', async (req, res, next) => {
             return res.status(400).json({ message: "Your password does not fulfill one or several of these requirements: minimum 8 characters/ contains at least 1 digit, at least 1 special symbol, at least 1 uppercase letter." })
         }
 
-        const reqNewUser = await prisma.user.findUnique({
+        let reqNewUser = await prisma.user.findUnique({
             where: { email: email }
         });
 
-        if (reqNewUser) {
+        if (reqNewUser && reqNewUser.is_email_verified === true) {
             return res.status(400).json({ message: "Email already used by another user." })
         }
         else if ((role === 'Admin' && keyRole !== process.env.ADMIN_KEY_SIGNUP) || (role === 'Employee' && keyRole !== process.env.EMPLOYEE_KEY_SIGNUP)) {
@@ -55,29 +55,41 @@ router.post('/signup', async (req, res, next) => {
         }
         else {
 
-            const stringToken = crypto.randomBytes(32).toString('hex');
-            const expirationDate = new Date();
 
-            expirationDate.setMinutes(expirationDate.getMinutes() + 15);
             const hash = await bcrypt.hash(password, 10)
-            const userCreated = await prisma.user.create({
-                data: {
-                    email: email,
-                    password: hash,
-                    name: name || "Unknown",
-                    role: role,
-                    is_email_verified: false
 
-                }
-            });
+            if (!reqNewUser) { //we create in our database the new user if his email was not found in the db, else we don't need to register his informations, but just need to check his email.
+                reqNewUser = await prisma.user.create({
+                    data: {
+                        email: email,
+                        password: hash,
+                        name: name || "Unknown",
+                        role: role,
+                        is_email_verified: false
+
+                    }
+                });
+
+            }
+
+            else { //if the user exists but is not verified
+
+                reqNewUser = await prisma.user.update({
+                    where: { email: email },
+                    data: {
+                        password: hash,
+                        name: name || "Unknown",
+                        role: role,
+                        keyRole: keyRole
+                    }
+                })
+            }
             const verificationToken = jwt.sign({
-                stringChecker: stringToken,
-                userId: userCreated.id
-            }, process.env.JWT_SECRET,
+                userId: reqNewUser.id
+            }, process.env.JWT_VERIFICATION_SECRET,
                 { expiresIn: "30m" }
             );
-            console.log(userCreated.email, verificationToken);
-            const emailSent = await sendVerificationEmail(userCreated.email, verificationToken);
+            const emailSent = await sendVerificationEmail(reqNewUser.email, verificationToken);
 
             if (emailSent) {
                 return res.status(201).json({
@@ -109,10 +121,10 @@ router.get('/verifyEmail', async (req, res, next) => {
             return res.status(400).json({ error: "Error, token missing." })
         }
 
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_VERIFICATION_SECRET);
 
         const userId = decoded.userId;
-        const user = prisma.user.findFirst({
+        const user = await prisma.user.findUnique({
             where: { id: userId }
         });
 
@@ -127,8 +139,15 @@ router.get('/verifyEmail', async (req, res, next) => {
                     is_email_verified: true
                 }
             })
+            const sessionToken = jwt.sign({
+                email: user.email,
+                userId: user.id,
+                userRole: user.role
+            }, process.env.JWT_SESSION_SECRET,
+                { expiresIn: "2h" }
+            );
 
-            return res.status(200).json({ message: "Email was successfully verified" })
+            return res.status(200).json({ message: "Email was successfully verified", sessionToken })
         }
 
 
@@ -171,8 +190,8 @@ router.post('/login', async (req, res, next) => {
                     email: checkUser.email,
                     userId: checkUser.id,
                     userRole: checkUser.role
-                }, process.env.JWT_SECRET,
-                    { expiresIn: "1h" }
+                }, process.env.JWT_SESSION_SECRET,
+                    { expiresIn: "2h" }
                 );
 
                 return res.status(200).json({
@@ -243,6 +262,7 @@ router.get('/', authenticateToken, async (req, res) => {
             }
 
             else {
+
                 return res.status(200).json({
                     email: existingUser.email,
                     name: existingUser.name || "Unknown",

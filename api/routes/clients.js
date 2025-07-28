@@ -6,9 +6,10 @@ const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
 
-const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js')
+const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('./dateUtils.js');
+const authenticateToken = require('../middlewares/auth.js');
 
-router.post('/', async (req, res, next) => {
+router.post('/', authenticateToken, async (req, res, next) => {
     try {
         const newClient = await prisma.client.create({
             data: {
@@ -32,7 +33,10 @@ router.post('/', async (req, res, next) => {
     }
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', authenticateToken, async (req, res, next) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
         const clients = await prisma.client.findMany({
             select: {
@@ -68,9 +72,10 @@ router.get('/', async (req, res, next) => {
 }
 );
 
-router.get('/:clientId', async (req, res, next) => {
-
-
+router.get('/:clientId', authenticateToken, async (req, res, next) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
 
         parsedIdClient = parseInt(req.params.clientId);
@@ -172,7 +177,10 @@ router.get('/:clientId', async (req, res, next) => {
     }
 });
 
-router.delete('/:clientId', async (req, res, next) => {
+router.delete('/:clientId', authenticateToken, async (req, res, next) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
         const parsedIdClient = parseInt(req.params.clientId);
 

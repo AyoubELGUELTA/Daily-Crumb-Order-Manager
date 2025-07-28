@@ -11,6 +11,8 @@ const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliver
 const { startOfDay, addDays } = require('date-fns');
 const { start } = require('repl');
 
+const authenticateToken = require('../middlewares/auth.js');
+
 const ENUMS_ORDERS_STATUS = ["PREPARED", "INITIALIZED", "SHIPPED", "DELIVERED"]
 // const testDate = '12/12/2025';
 // const testDateConverted = dateInputConverter(testDate);
@@ -645,7 +647,12 @@ router.patch('/:orderId', async (req, res, next) => {
 });
 
 
-router.get('/stats', async (req, res, next) => {
+router.get('/stats', authenticateToken, async (req, res, next) => {
+
+    if (req.user.userRole !== "Admin") {
+        return res.status(403).json({ message: "Only Admins can have access to the stats" })
+    }
+
     try {
         const { fromPeriod, toPeriod, popularProducts, sales } = req.query;
         let whereClause = {};

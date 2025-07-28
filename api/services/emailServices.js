@@ -16,7 +16,7 @@ async function sendVerificationEmail(recipientEmail, verificationToken) {
         html: `
             <p>Bonjour,</p>
             <p>Veuillez cliquer sur le lien ci-dessous pour vérifier votre adresse e-mail :</p>
-            <a href="https://localhost:3100/users/verify-email?token=${verificationToken}">Vérifiez mon e-mail</a>
+            <a href="http://localhost:3100/users/verifyEmail?token=${verificationToken}">Vérifiez mon e-mail</a>
             <p>Ce lien expirera dans 30 minutes.</p>
         `
     };
@@ -31,5 +31,4 @@ async function sendVerificationEmail(recipientEmail, verificationToken) {
     }
 }
 
-// 3. Exportez la fonction
 module.exports = { sendVerificationEmail };

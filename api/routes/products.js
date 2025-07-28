@@ -5,6 +5,7 @@ const express = require('express');
 const router = express.Router();
 
 const prisma = require('../../prismaClient.js');
+const authenticateToken = require('../middlewares/auth.js');
 
 router.get('/', async (req, res, next) => {
     try {
@@ -15,7 +16,6 @@ router.get('/', async (req, res, next) => {
                 name: true,
                 price: true,
                 inStock: true,
-                orderItem: false
             }
         });
 
@@ -79,8 +79,10 @@ router.get('/:productId', async (req, res, next) => {
     }
 })
 
-router.post('/', async (req, res, next) => {
-
+router.post('/', authenticateToken, async (req, res, next) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
 
         const product = await prisma.product.create({
@@ -109,7 +111,9 @@ router.post('/', async (req, res, next) => {
 });
 
 router.delete('/:productId', async (req, res, next) => {
-
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
 
         const productId = parseInt(req.params.productId)
@@ -145,6 +149,9 @@ router.delete('/:productId', async (req, res, next) => {
 });
 
 router.patch('/:productId', async (req, res, next) => {
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete users' });
+    }
     try {
 
         const productId = parseInt(req.params.productId)
