@@ -1,12 +1,5 @@
 
-const express = require('express');
-
 const prisma = require('../../prismaClient.js');
-
-const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('../utils/dateUtils.js');
-
-const { startOfDay, addDays } = require('date-fns');
-
 
 const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('../utils/dateUtils.js');
 
@@ -302,3 +295,248 @@ exports.initialize_order = async (req, res, next) => {
 
 
 };
+
+exports.update_item_order = async (req, res, next) => {
+
+    if (req.user.userRole !== "Admin" || "Employee") {
+        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
+    }
+
+    try {
+
+        const productId = parseInt(req.body.productId);
+        if (!productId) {
+            return res.status(500).json({ message: "Choose what do you want to update." })
+        }
+        const orderId = parseInt(req.params.orderId);
+
+        const quantity = parseInt(req.body.quantity);
+
+        const orderItemToUpdate = await prisma.orderItem.update({
+            where: {
+                orderId_productId: {
+                    orderId: orderId,
+                    productId: productId
+                }
+            },
+            data: {
+                quantity: quantity
+            }
+        });
+
+        res.status(201).json({
+            message: "Order item updated!",
+            product: {
+                id: orderItemToUpdate.productId,
+                quantity: orderItemToUpdate.quantity,
+                orderId: orderId
+            },
+            request: {
+                type: 'GET',
+                url: "http://localhost:3100/orders/" + String(orderId),
+                comment: "Look at the order details"
+            }
+        });
+
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+exports.delete_item_order = async (req, res, next) => {
+    if (req.user.userRole !== "Admin" || "Employee") {
+        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
+    }
+    try {
+
+        const productId = parseInt(req.body.productId);
+        if (!productId) {
+            return res.status(500).json({ message: "Choose what item you want to delete." })
+        }
+        const orderId = parseInt(req.params.orderId);
+
+        const existingOrder = prisma.order.findUnique({
+            where: { id: orderId }
+        });
+
+        if (!existingOrder) {
+            return res.status(404).json({ message: `Order with ID ${orderIdrderId} not found.` });
+        }
+
+
+        const orderItemToDelete = await prisma.orderItem.delete({
+            where: {
+                orderId_productId: {
+                    orderId: orderId,
+                    productId: productId
+                }
+            }
+        });
+
+        res.status(204).send()
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+};
+
+
+exports.get_stats = async (req, res, next) => {
+
+    if (req.user.userRole !== "Admin") {
+        return res.status(403).json({ message: "Only Admins can have access to the stats" })
+    }
+
+    try {
+        const { fromPeriod, toPeriod, popularProducts, sales } = req.query;
+        let whereClause = {};
+
+
+        const queryParamsCount = [fromPeriod, toPeriod].filter(param => param !== undefined).length;
+        if (queryParamsCount === 1 && (fromPeriod || toPeriod)) {
+            res.status(400).json({ error: "Please, enter two queries to determinate a period duration (you can also put the same date in both fields times to know the number of orders in this day" })
+        }
+        if (queryParamsCount > 1) {
+
+            if (fromPeriod && toPeriod)
+                if (!isValidDateFormat(fromPeriod) || !isValidDateFormat(toPeriod)) {
+                    res.status(400).json({ error: "Date provided does not fulfill the dd/mm/yyyy format, please try again respecting this format." })
+                }
+
+            const startPeriod = stringDateToJavaDate(fromPeriod);
+            const endPeriod = stringDateToJavaDate(toPeriod);
+
+            startPeriod.setHours(0, 0, 0, 0);
+            endPeriod.setHours(23, 59, 59, 9999);
+            if (!startPeriod || !endPeriod) {
+                res.status(400).json({ error: "Date provided could not be interpreted as java date." })
+            };
+
+            if (!sales) {
+                whereClause.deliveringDate = {
+                    gte: startPeriod,
+                    lt: endPeriod
+                };
+
+                const nbOfOrders = await prisma.order.count({
+                    where: whereClause
+                });
+
+                return res.status(200).json({
+                    filter: `From ${fromPeriod} to ${toPeriod}`,
+                    count: nbOfOrders
+                })
+            }
+            if (sales === 'true' || 'True' || 'TRUE') {
+                const paidOrdersInPeriod = await prisma.order.findMany({
+                    where: {
+                        paidAt: {
+                            gte: startPeriod,
+                            lt: endPeriod
+                        }
+                    },
+                    include: {
+                        orderItems: {
+                            include: {
+                                product: {
+                                    select: {
+                                        price: true
+                                    }
+                                }
+                            }
+                        }
+                    }
+                })
+
+                let totalRevenue = 0;
+
+                paidOrdersInPeriod.forEach(order => {
+                    order.orderItems.forEach(item => {
+                        if (item.product && typeof item.product.price === 'number') {
+                            totalRevenue += item.quantity * item.product.price
+                        }
+                    })
+                })
+
+                return res.status(200).json({
+                    message: `The total revenue from ${JavaDateToStringDate(startPeriod)} to ${JavaDateToStringDate(endPeriod)}.`,
+                    totalRevenue: totalRevenue
+                })
+            }
+
+
+
+
+            if (popularProducts) {
+                const popProducts = parseInt(popularProducts)
+
+                if (!Number.isInteger(popProducts)) {
+                    return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
+                }
+
+                if (popProducts < 1) {
+                    return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
+                }
+
+                console.log(popProducts);
+
+                const popularProductsSorted = await prisma.orderItem.groupBy({
+                    by: ['productId'],
+                    _sum: {
+                        quantity: true
+                    },
+                    orderBy: {
+                        _sum: {
+                            quantity: 'desc'
+                        }
+                    },
+                    take: popProducts
+                })
+
+                const productIds = popularProductsSorted.map(item => item.productId)
+                console.log(productIds)
+                const productDetails = await prisma.product.findMany({
+                    where: {
+                        id: {
+                            in: productIds
+                        }
+                    },
+                    select: {
+                        id: true,
+                        name: true,
+                        price: true
+                    }
+                });
+
+                const formattedPopularProducts = popularProductsSorted.map(item => {
+                    const product = productDetails.find(product => product.id === item.productId)
+
+                    return {
+                        productId: item.productId,
+                        productName: product ? product.name : "Unknown product",
+                        productPrice: product ? product.price : null,
+                        totalQuantityOrdered: item._sum.quantity,
+
+                    }
+                })
+
+                return res.status(200).json({
+                    listPopProductIds: productIds,
+                    popularProducts: formattedPopularProducts
+                })
+
+            }
+        }
+    }
+    catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+}
+
+
+

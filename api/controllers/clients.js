@@ -1,10 +1,7 @@
 
-const express = require('express');
-
 const prisma = require('../../prismaClient.js');
 
 const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliveringDateBeforeToday } = require('../utils/dateUtils.js');
-const authenticateToken = require('../middlewares/auth.js');
 
 
 exports.create_new_client = async (req, res, next) => {
