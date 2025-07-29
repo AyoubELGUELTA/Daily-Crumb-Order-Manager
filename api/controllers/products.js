@@ -1,4 +1,6 @@
 const prisma = require('../../prismaClient.js');
+const fs = require('fs/promises');
+const fileType = require('file-type');
 
 exports.get_product = async (req, res, next) => {
     try {
