@@ -12,6 +12,16 @@ exports.get_product = async (req, res, next) => {
                 name: true,
                 price: true,
                 inStock: true,
+            },
+            include: {
+                productImage: {
+                    select: {
+                        id: true,
+                        url: true,
+                        isMain: true,
+                        altText: true
+                    }
+                }
             }
         });
 
