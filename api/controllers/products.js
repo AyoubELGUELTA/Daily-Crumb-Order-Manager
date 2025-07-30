@@ -1,6 +1,7 @@
 const prisma = require('../../prismaClient.js');
+const { fileTypeFromFile } = require('file-type/node');
 const fs = require('fs/promises');
-const fileType = require('file-type');
+
 
 exports.get_product = async (req, res, next) => {
     try {
@@ -80,6 +81,7 @@ exports.post_new_product = async (req, res, next) => {
     }
     try {
 
+
         const product = await prisma.product.create({
             data: {
                 name: req.body.name,
@@ -104,6 +106,130 @@ exports.post_new_product = async (req, res, next) => {
 
 
 }
+
+exports.post_new_image_product = async (req, res, next) => {
+
+    if (req.user.userRole !== 'Admin') {
+        return res.status(403).json({ message: 'Only admins can delete products' });
+    }
+
+    const productId = parseInt(req.params.productId);
+
+    const uploadedFile = req.file;
+
+    if (!uploadedFile) {
+        return res.status(400).json({ message: "Image file was not given." })
+    }
+
+    try {
+
+        const detectedType = await fileTypeFromFile(uploadedFile.path);
+
+        if (!detectedType || (detectedType.mime !== 'image/jpeg' && detectedType.mime !== 'image/png')) {
+            await fs.unlink(uploadedFile.path);
+            return res.status(400).json({ message: 'Type de fichier non supporté. Seules les images JPEG et PNG sont autorisées.' });
+        }
+
+        const imageUrl = uploadedFile.path.replace(/\\/g, '/'); // Assurer un chemin URL-friendly
+        let { isMain, altText } = req.body;
+
+        const product = prisma.product.findUnique({
+            where: { id: productId }
+        });
+
+        const productName = product.name
+
+        const existingProductImages = await prisma.productImage.count({
+            where: { productId: productId }
+        });
+
+        const existingMainImage = await prisma.productImage.findFirst({
+            where: {
+                productId: productId,
+                isMain: true
+            }
+        })
+
+        if ((!isMain && existingProductImages === 0) || (isMain === "true" || "True")) {
+            if (existingMainImage) {
+                return res.status(400).json({ message: "You already assigned a Main image, please remove this latter assignement to place it on this new image." })
+            }
+            isMain = true
+
+        }
+
+
+
+        if (!altText) {
+            altText = "imageProduct-" + productName
+        }
+
+
+
+        const newProductImage = await prisma.productImage.create({
+            data: {
+                url: imageUrl,
+                isMain: isMain || false,
+                altText: altText,
+                productId: productId
+            },
+
+        })
+
+        res.status(201).json({ message: "New image product added!" })
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+
+};
+
+exports.delete_image_product = async (req, res, next) => {
+
+    try {
+        const productId = parseInt(req.params.productId);
+        const imageId = parseInt(req.params.imageId);
+
+        if (isNaN(productId) || isNaN(imageId)) {
+            return res.status(400).json({ message: 'Les IDs de produit et d\'image doivent être des nombres valides.' });
+
+        }
+
+        const imageProductToDelete = await prisma.productImage.findUnique({
+            where: {
+                id: imageId,
+                productId: productId
+            }
+        });
+
+        if (!imageProductToDelete) {
+            return res.status(404).json({ error: "Image not found for this product." })
+        }
+
+        const imageUrl = imageProductToDelete.url;
+        console.log(imageUrl);
+
+        const relativePath = imageUrl.split('api/uploads/')[1];
+        await prisma.productImage.delete({
+            where: { id: imageId }
+        });
+
+        console.log(relativePath);
+
+        await fs.unlink(`api/uploads/${relativePath}`);
+
+        res.status(200).json({ message: 'Image supprimée avec succès !' });
+
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message })
+    }
+
+};
 
 exports.delete_product = async (req, res, next) => {
     if (req.user.userRole !== 'Admin') {

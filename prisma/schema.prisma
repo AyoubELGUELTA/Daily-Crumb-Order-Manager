@@ -19,7 +19,6 @@ model Product {
   name  String  
   price Float
   inStock Boolean @default(false)
-  imageProduct String 
   orderItem OrderItem[]
   images ProductImage[]
   
@@ -32,7 +31,6 @@ model ProductImage {
   product   Product  @relation(fields: [productId], references: [id])
   isMain    Boolean? // Optionnel: pour marquer l'image principale
   altText   String?  // Optionnel: texte alternatif pour l'accessibilité
-  order     Int?     // Optionnel: ordre d'affichage des images
 }
 
 enum OrderStatus {

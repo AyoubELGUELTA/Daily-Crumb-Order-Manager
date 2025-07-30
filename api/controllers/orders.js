@@ -296,6 +296,138 @@ exports.initialize_order = async (req, res, next) => {
 
 };
 
+
+exports.post_item_order = async (req, res, next) => {
+
+    if (req.user.userRole !== "Admin" || "Employee") {
+        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
+    }
+
+    try {
+        const parsedOrderId = parseInt(req.params.orderId);
+        const productId = req.body.productId;
+        let quantity = req.body.quantity
+
+        if (isNaN(parsedOrderId)) {
+            return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
+        }
+
+        const existingOrder = prisma.order.findUnique({
+            where: { id: parsedOrderId }
+        });
+
+        if (!existingOrder) {
+            return res.status(404).json({ message: `Order with ID ${parsedOrderId} not found.` });
+        }
+        if (!productId) {
+            return res.status(400).json({ message: 'Product ID is required.' });
+        }
+        if (quantity !== undefined) {
+            const parsedQuantity = parseInt(quantity);
+            if (isNaN(parsedQuantity) || parsedQuantity < 1) {
+                return res.status(400).json({ message: 'Quantity must be a positive number.' });
+            }
+        }
+
+        if (quantity === undefined) {
+            quantity = 1
+        }
+
+        const existingProduct = await prisma.product.findUnique({
+            where: { id: productId },
+        });
+        if (!existingProduct) {
+            return res.status(404).json({ message: `Product with ID ${productId} not found.` });
+        }
+
+
+
+        const existingOrderItem = await prisma.orderItem.findFirst({
+            where: {
+                orderId: parsedOrderId,
+                productId: productId
+            }
+        });
+
+        if (existingOrderItem) {
+            await prisma.orderItem.update({
+                where: {
+                    id: existingOrderItem.id
+                },
+                data: {
+                    quantity: existingOrderItem.quantity + quantity
+                },
+                include: {
+                    product: {
+                        select: {
+                            id: true,
+                            name: true,
+                            price: true
+                        }
+                    }
+                }
+            });
+
+
+            res.status(201).json({
+                message: "Order item added (updated)!",
+                product: {
+                    id: existingOrderItem.productId,
+                    quantity: existingOrderItem.quantity + quantity,
+                    orderId: parsedOrderId
+                },
+                request: {
+                    type: 'GET',
+                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
+                    comment: "Look at the order details"
+                }
+            })
+
+        }
+
+
+        else {
+
+            const newOrderItem = await prisma.orderItem.create({
+                data: {
+                    quantity: quantity || 1,
+                    orderId: parsedOrderId,
+                    productId: productId
+                },
+                include: {
+                    product: {
+                        select: {
+                            id: true,
+                            name: true,
+                            price: true,
+                        }
+                    }
+                }
+            });
+
+            res.status(201).json({
+                message: "Order item added!",
+                product: {
+                    id: newOrderItem.productId,
+                    quantity: newOrderItem.quantity,
+                    orderId: parsedOrderId
+                },
+                request: {
+                    type: 'GET',
+                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
+                    comment: "Look at the order details"
+                }
+            })
+
+        }
+
+    }
+
+    catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+}
+
 exports.update_item_order = async (req, res, next) => {
 
     if (req.user.userRole !== "Admin" || "Employee") {

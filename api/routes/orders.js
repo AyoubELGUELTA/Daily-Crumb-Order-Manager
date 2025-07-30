@@ -11,6 +11,8 @@ router.get('/', authenticateToken, OrdersControllers.get_orders);
 
 router.post('/', authenticateToken, OrdersControllers.initialize_order);
 
+router.post('/:orderId/items', authenticateToken, OrdersControllers.post_item_order);
+
 router.patch('/:orderId/items', authenticateToken, OrdersControllers.update_item_order);
 
 router.delete('/:orderId/items', OrdersControllers.delete_item_order);
