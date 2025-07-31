@@ -26,10 +26,10 @@ model Product {
 
 model ProductImage {
   id        Int      @id @default(autoincrement())
-  url       String   // L'URL de l'image
+  url       String   
   productId Int      // Clé étrangère vers le Product
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  isMain    Boolean? // Optionnel: pour marquer l'image principale
+  isMain    Boolean? // Optionnel: pour marquer si c'est l'image principale ou non (pas obligatoire qu'il y ait une d'ailleurs)
   altText   String?  // Optionnel: texte alternatif pour l'accessibilité
 }
 

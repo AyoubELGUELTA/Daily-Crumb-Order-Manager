@@ -173,6 +173,9 @@ exports.user_login = async (req, res, next) => {
         if (!checkUser) {
             return res.status(404).json({ message: "Authentification failed. Please make sure your password and email are correct." })
         }
+        else if (checkUser.is_email_verified === false) {
+            return res.status(400).json({ message: "Please, verify your email first before trying to login, signup again if the link expired." })
+        }
         else {
 
             const checkPassword = await bcrypt.compare(password, checkUser.password)
@@ -209,9 +212,6 @@ exports.user_login = async (req, res, next) => {
 }
 
 exports.delete_user = async (req, res) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can delete users' });
-    }
 
     const userIdToDelete = parseInt(req.params.userId);
 
@@ -221,14 +221,14 @@ exports.delete_user = async (req, res) => {
             where: { id: userIdToDelete }
         });
 
-        if (!userToDelete) return res.sendStatus(404);
+        if (!userToDelete) return res.status(404).json({ message: "user not found" });
 
         else {
             await prisma.user.delete({
                 where: { id: userIdToDelete }
             });
 
-            return res.sendStatus(204)
+            return res.status(204).send();
         }
     } catch (err) {
 
@@ -237,9 +237,6 @@ exports.delete_user = async (req, res) => {
 };
 
 exports.user_get = async (req, res) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can look at the users' });
-    }
     try {
 
         const userId = parseInt(req.query.userId);

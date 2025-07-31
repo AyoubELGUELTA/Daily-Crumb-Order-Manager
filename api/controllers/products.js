@@ -36,7 +36,7 @@ exports.get_product = async (req, res, next) => {
                     })),
                     request: {
                         type: 'GET',
-                        url: 'http://localhost:3100/products/' + product.id
+                        url: process.env.BASE_URL + '/products/' + product.id
                     }
                 })
                 )
@@ -89,7 +89,7 @@ exports.get_single_product = async (req, res, next) => {
             },
             request: {
                 type: 'GET',
-                url: 'http://localhost:3100/products',
+                url: process.env.BASE_URL + '/products',
                 comment: 'look at all products'
             }
         }
@@ -105,18 +105,15 @@ exports.get_single_product = async (req, res, next) => {
 
 exports.post_new_product = async (req, res, next) => {
 
-    if (req.user.userRole !== "Admin") {
-        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
-    }
-
     try {
-
+        const BooleanList = ['True', 'true', 'false', 'False', 'TRUE', 'FALSE']
+        inStock = BooleanList.includes(req.body.inStock)
 
         const product = await prisma.product.create({
             data: {
                 name: req.body.name,
                 price: req.body.price,
-                inStock: req.body.inStock || false
+                inStock: inStock || false
             }
         });
 
@@ -125,7 +122,7 @@ exports.post_new_product = async (req, res, next) => {
             product: product,
             request: {
                 type: 'GET',
-                url: 'http://localhost:3100/products/' + product.id,
+                url: process.env.BASE_URL + '/products/' + product.id,
                 comment: 'Get all info of this product!'
             }
         })
@@ -138,11 +135,6 @@ exports.post_new_product = async (req, res, next) => {
 }
 
 exports.post_new_image_product = async (req, res, next) => {
-
-
-    if (req.user.userRole !== "Admin") {
-        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
-    }
 
     const productId = parseInt(req.params.productId);
 
@@ -186,9 +178,11 @@ exports.post_new_image_product = async (req, res, next) => {
                 return res.status(400).json({ message: "You already assigned a Main image, please remove this latter assignement to place it on this new image." })
             }
 
-            else if (existingProductImages === 0) {
-                isMain = true
-            }
+
+        }
+
+        else if (existingProductImages === 0) {
+            isMain = true
         }
 
 
@@ -212,18 +206,17 @@ exports.post_new_image_product = async (req, res, next) => {
     }
 
     catch (error) {
-        await fs.unlink(uploadedFile.path)
-        res.status(500).json({ error: error.message })
+        try {
+            await fs.unlink(`api/uploads/${relativePath}`);
+        } catch (fileError) {
+            if (fileError.code !== 'ENOENT') {// si le code == ENOENT ça veut dire que le fichier/ la requête de l'objet n'a pas été trouvé
+                throw fileError;
+            } res.status(500).json({ error: error.message })
+        }
     }
-
 };
 
 exports.delete_image_product = async (req, res, next) => {
-
-    if (req.user.userRole !== "Admin") {
-        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
-    }
-
     try {
         const productId = parseInt(req.params.productId);
         const imageId = parseInt(req.params.imageId);
@@ -253,9 +246,15 @@ exports.delete_image_product = async (req, res, next) => {
 
         console.log(relativePath);
 
-        await fs.unlink(`api/uploads/${relativePath}`);
-
-        res.status(200).json({ message: 'Image supprimée avec succès !' });
+        try {
+            await fs.unlink(`api/uploads/${relativePath}`);
+            res.status(204).send()
+        } catch (fileError) {
+            if (fileError.code !== 'ENOENT') {// si le code == ENOENT ça veut dire que le fichier/ la requête de l'objet n'a pas été trouvé
+                throw fileError;
+            }
+            console.warn(`Could not delete file: ${relativePath}. It may not exist.`);
+        }
 
 
     }
@@ -268,9 +267,6 @@ exports.delete_image_product = async (req, res, next) => {
 
 exports.delete_product = async (req, res, next) => {
 
-    if (req.user.userRole !== "Admin") {
-        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
-    }
     try {
 
         const productId = parseInt(req.params.productId)
@@ -326,9 +322,6 @@ exports.delete_product = async (req, res, next) => {
 
 
 exports.update_product = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can update products' });
-    }
     try {
 
         const productId = parseInt(req.params.productId)
@@ -345,9 +338,15 @@ exports.update_product = async (req, res, next) => {
             if (req.body[field] !== undefined) {
                 if (field === 'price') {
                     const parsedPrice = parseFloat(req.body[field]);
+                    if (isNaN(parsedPrice)) {
+                        return res.status(400).json({ message: 'Price must be a valid number.' });
+                    }
                     updateData[field] = parsedPrice;
                 }
                 else if (field === 'inStock') {
+                    if (req.body[field] !== undefined && !['true', 'True', 'false', 'False'].includes(req.body[field])) {
+                        return res.status(400).json({ message: 'inStocke must be a boolean (true/false)' })
+                    }
                     updateData[field] = req.body[field] || false
                 }
                 else {
@@ -355,28 +354,29 @@ exports.update_product = async (req, res, next) => {
                 }
 
             };
-
-            if (Object.keys(updateData).length === 0) {
-                res.status(400).json({ message: "No field(s) or no valid field(s) provided for update." })
-            }
-
-
-            const updatedProduct = await prisma.product.update({
-                where: { id: productId },
-                data: updateData
-            })
-
-            res.status(200).json({
-                message: 'Product updated successfully.',
-                product: updatedProduct,
-                request: {
-                    type: 'GET',
-                    url: `http://localhost:3100/products/${updatedProduct.id}`,
-                    comment: 'Get all info of this product!'
-                }
-            });
-
         }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ message: "No field(s) or no valid field(s) provided for update." })
+        }
+
+
+        const updatedProduct = await prisma.product.update({
+            where: { id: productId },
+            data: updateData
+        })
+
+        res.status(200).json({
+            message: 'Product updated successfully.',
+            product: updatedProduct,
+            request: {
+                type: 'GET',
+                url: process.env.BASE_URL + `/products/${updatedProduct.id}`,
+                comment: 'Get all info of this product!'
+            }
+        });
+
+
     }
     catch (error) {
         res.status(500).json({ error: error.message })

@@ -5,9 +5,6 @@ const { stringDateToJavaDate, JavaDateToStringDate, isValidDateFormat, isDeliver
 
 
 exports.create_new_client = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin' || 'Employee') {
-        return res.status(403).json({ message: 'Only admins/employees can access this info' });
-    }
     try {
         const newClient = await prisma.client.create({
             data: {
@@ -21,7 +18,7 @@ exports.create_new_client = async (req, res, next) => {
             client: newClient,
             request: {
                 type: 'GET',
-                url: "http://localhost:3100/clients",
+                url: process.env.BASE_URL + "/clients",
                 comment: "look at all our clients"
             }
         })
@@ -33,9 +30,6 @@ exports.create_new_client = async (req, res, next) => {
 
 
 exports.get_client = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin' || 'Employee') {
-        return res.status(403).json({ message: 'Only admins/employees can access this info' });
-    }
     try {
         const clients = await prisma.client.findMany({
             select: {
@@ -54,7 +48,7 @@ exports.get_client = async (req, res, next) => {
                     createdAt: client.createdAt,
                     request: {
                         type: 'GET',
-                        url: 'http://localhost:3100/clients/' + String(client.id),
+                        url: process.env.BASE_URL + '/clients/' + String(client.id),
                         comment: 'Look at the client orders!'
                     }
                 })
@@ -73,13 +67,12 @@ exports.get_client = async (req, res, next) => {
 
 
 exports.get_client_orders = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin' || 'Employee') {
-        return res.status(403).json({ message: 'Only admins/employees can access this info' });
-    }
     try {
 
         parsedIdClient = parseInt(req.params.clientId);
-
+        if (isNaN(parsedIdClient)) {
+            return res.status(400).json({ message: 'L\'ID du client doit être un nombre valide.' });
+        }
         const orders = req.query.history;
 
         if (orders === "all") {
@@ -114,6 +107,7 @@ exports.get_client_orders = async (req, res, next) => {
             })
 
             const response = {
+                totalOrders: allClientOrders.length,
                 allClientOrders: allClientOrders.map(order => ({
                     id: order.id,
                     dateOrder: order.dateOrder,
@@ -128,7 +122,7 @@ exports.get_client_orders = async (req, res, next) => {
                     })),
                     request: {
                         type: 'GET',
-                        url: 'http://localhost:3100/orders/' + order.id,
+                        url: process.env.BASE_URL + '/orders/' + order.id,
                         comment: 'Click to see the order detail !'
                     }
                 }))
@@ -163,7 +157,7 @@ exports.get_client_orders = async (req, res, next) => {
             },
             request: {
                 type: 'GET',
-                url: 'http://localhost:3100/orders',
+                url: process.env.BASE_URL + '/orders',
                 comment: 'look at all orders'
             }
         }
@@ -180,13 +174,12 @@ exports.get_client_orders = async (req, res, next) => {
 
 
 exports.delete_client = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can delete users' });
-    }
     try {
         const parsedIdClient = parseInt(req.params.clientId);
-
-        const clientToDelete = prisma.client.findUnique({
+        if (isNaN(parsedIdClient)) {
+            return res.status(400).json({ message: 'L\'ID du client doit être un nombre valide.' });
+        }
+        const clientToDelete = await prisma.client.findUnique({
             where: { id: parsedIdClient }
         });
 

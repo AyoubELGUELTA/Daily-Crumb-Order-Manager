@@ -9,9 +9,6 @@ const { startOfDay, addDays } = require('date-fns');
 const ENUMS_ORDERS_STATUS = ["PREPARED", "INITIALIZED", "SHIPPED", "DELIVERED"]
 
 exports.get_orders = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin' || 'Employee') {
-        return res.status(403).json({ message: 'Only admins/employees can access this info' });
-    }
     try {
 
         const { time, planned, id, clientId, productId, status } = req.query;
@@ -87,7 +84,7 @@ exports.get_orders = async (req, res, next) => {
                         })),
                         request: {
                             type: 'GET',
-                            url: 'http://localhost:3100/orders/' + singleOrder.id,
+                            url: process.env.BASE_URL + '/orders/' + singleOrder.id,
                             comment: 'Click to see the order detail !'
                         }
 
@@ -236,7 +233,7 @@ exports.get_orders = async (req, res, next) => {
                     })),
                     request: {
                         type: 'GET',
-                        url: 'http://localhost:3100/orders/' + order.id,
+                        url: process.env.BASE_URL + '/orders/' + order.id,
                         comment: 'Click to see the order detail !'
                     }
                 }))
@@ -253,13 +250,21 @@ exports.get_orders = async (req, res, next) => {
 }
 
 exports.initialize_order = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin' || 'Employee') {
-        return res.status(403).json({ message: 'Only admins/employees can access to this fonctionnality' });
-    }
     try {
 
-        const parsedClientid = parseInt(req.body.clientId)
+        const parsedClientId = parseInt(req.body.clientId)
         const dateToDeliver = req.body.deliveringDate;
+
+        if (isNaN(parsedClientId)) {
+            return res.status(400).json({ error: "Invalid client ID. Must be a valid integer." });
+        }
+
+        const clientExists = await prisma.client.findUnique({
+            where: { id: parsedClientId }
+        });
+        if (!clientExists) {
+            return res.status(404).json({ error: `Client with ID ${parsedClientId} not found.` });
+        }
 
         if (!isValidDateFormat(dateToDeliver)) {
             return res.status(400).json({ error: "Please, enter a valid delivering date, in the dd/mm/yyyy format." })
@@ -271,7 +276,7 @@ exports.initialize_order = async (req, res, next) => {
 
         const order = await prisma.order.create({
             data: {
-                clientId: parsedClientid,
+                clientId: parsedClientId,
                 deliveringDate: stringDateToJavaDate(dateToDeliver)
             }
         });
@@ -284,7 +289,7 @@ exports.initialize_order = async (req, res, next) => {
             message: "(empty) order created!",
             request: {
                 type: 'GET',
-                url: 'http://localhost:3100/orders',
+                url: process.env.BASE_URL + '/orders',
                 comment: 'Get all orders, or specific order with the ?id=value query, or orders that need to be delivered today with ?time=today query'
             }
         })
@@ -299,10 +304,6 @@ exports.initialize_order = async (req, res, next) => {
 
 exports.post_item_order = async (req, res, next) => {
 
-    if (req.user.userRole !== "Admin" || "Employee") {
-        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
-    }
-
     try {
         const parsedOrderId = parseInt(req.params.orderId);
         const productId = req.body.productId;
@@ -311,8 +312,11 @@ exports.post_item_order = async (req, res, next) => {
         if (isNaN(parsedOrderId)) {
             return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
         }
+        if (isNaN(productId)) {
+            return res.status(400).json({ message: 'Invalid product ID. Must be a number.' });
+        }
 
-        const existingOrder = prisma.order.findUnique({
+        const existingOrder = await prisma.order.findUnique({
             where: { id: parsedOrderId }
         });
 
@@ -327,9 +331,8 @@ exports.post_item_order = async (req, res, next) => {
             if (isNaN(parsedQuantity) || parsedQuantity < 1) {
                 return res.status(400).json({ message: 'Quantity must be a positive number.' });
             }
-        }
-
-        if (quantity === undefined) {
+            quantity = parsedQuantity
+        } else {
             quantity = 1
         }
 
@@ -378,7 +381,7 @@ exports.post_item_order = async (req, res, next) => {
                 },
                 request: {
                     type: 'GET',
-                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
+                    url: process.env.BASE_URL + "/orders/" + String(parsedOrderId),
                     comment: "Look at the order details"
                 }
             })
@@ -414,7 +417,7 @@ exports.post_item_order = async (req, res, next) => {
                 },
                 request: {
                     type: 'GET',
-                    url: "http://localhost:3100/orders/" + String(parsedOrderId),
+                    url: process.env.BASE_URL + "/orders/" + String(parsedOrderId),
                     comment: "Look at the order details"
                 }
             })
@@ -430,19 +433,24 @@ exports.post_item_order = async (req, res, next) => {
 
 exports.update_item_order = async (req, res, next) => {
 
-    if (req.user.userRole !== "Admin" || "Employee") {
-        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
-    }
-
     try {
 
         const productId = parseInt(req.body.productId);
-        if (!productId) {
-            return res.status(500).json({ message: "Choose what do you want to update." })
-        }
+
         const orderId = parseInt(req.params.orderId);
 
         const quantity = parseInt(req.body.quantity);
+
+        if (isNaN(parsedOrderId)) {
+            return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
+        }
+        if (isNaN(productId)) {
+            return res.status(400).json({ message: 'Invalid product ID. Must be a number.' });
+        }
+
+        if (isNaN(quantity)) {
+            return res.status(400).json({ message: 'Invalid quantity passed. Must be a number.' });
+        }
 
         const orderItemToUpdate = await prisma.orderItem.update({
             where: {
@@ -465,7 +473,7 @@ exports.update_item_order = async (req, res, next) => {
             },
             request: {
                 type: 'GET',
-                url: "http://localhost:3100/orders/" + String(orderId),
+                url: process.env.BASE_URL + "/orders/" + String(orderId),
                 comment: "Look at the order details"
             }
         });
@@ -480,18 +488,21 @@ exports.update_item_order = async (req, res, next) => {
 
 
 exports.delete_item_order = async (req, res, next) => {
-    if (req.user.userRole !== "Admin" || "Employee") {
-        return res.status(400).json({ message: "Only Admins or Employees can access to this functionnality." })
-    }
+
     try {
 
         const productId = parseInt(req.body.productId);
-        if (!productId) {
-            return res.status(500).json({ message: "Choose what item you want to delete." })
-        }
+
         const orderId = parseInt(req.params.orderId);
 
-        const existingOrder = prisma.order.findUnique({
+        if (isNaN(parsedOrderId)) {
+            return res.status(400).json({ message: 'Invalid order ID. Must be a number.' });
+        }
+        if (isNaN(productId)) {
+            return res.status(400).json({ message: 'Invalid product ID. Must be a number.' });
+        }
+
+        const existingOrder = await prisma.order.findUnique({
             where: { id: orderId }
         });
 
@@ -513,6 +524,9 @@ exports.delete_item_order = async (req, res, next) => {
     }
 
     catch (error) {
+        if (error.code === 'P2025') {
+            return res.status(404).json({ message: "Order item not found for the given Order ID and Product ID." });
+        }
         res.status(500).json({ error: error.message });
     }
 };
@@ -520,149 +534,153 @@ exports.delete_item_order = async (req, res, next) => {
 
 exports.get_stats = async (req, res, next) => {
 
-    if (req.user.userRole !== "Admin") {
-        return res.status(403).json({ message: "Only Admins can have access to the stats" })
-    }
-
     try {
         const { fromPeriod, toPeriod, popularProducts, sales } = req.query;
         let whereClause = {};
 
 
-        const queryParamsCount = [fromPeriod, toPeriod].filter(param => param !== undefined).length;
-        if (queryParamsCount === 1 && (fromPeriod || toPeriod)) {
-            res.status(400).json({ error: "Please, enter two queries to determinate a period duration (you can also put the same date in both fields times to know the number of orders in this day" })
+        const A_statsQueryParamsFilter = [fromPeriod, toPeriod, popularProducts].filter(param => param !== undefined).length;
+        if (A_statsQueryParamsFilter < 2 && (fromPeriod || toPeriod)) {
+            return res.status(400).json({ error: "Please, enter two queries to determinate a period duration (you can also put the same date in both fields times to know the number of orders in this day" })
         }
-        if (queryParamsCount > 1) {
+        else if (A_statsQueryParamsFilter > 1 && popularProducts) {
+            return res.status(400).json({ error: "Please, you cannot put period requests with poopular Product request." })
+        }
 
-            if (fromPeriod && toPeriod)
-                if (!isValidDateFormat(fromPeriod) || !isValidDateFormat(toPeriod)) {
-                    res.status(400).json({ error: "Date provided does not fulfill the dd/mm/yyyy format, please try again respecting this format." })
-                }
+        const B_statsQueryParamsFilter = [popularProducts, sales].filter(param => param !== undefined);
+        if (B_statsQueryParamsFilter.length > 1) {
+            return res.status(400).json({ error: "Please, request only one type of stats at a time (popularProducts OR sales)." });
+        }
 
-            const startPeriod = stringDateToJavaDate(fromPeriod);
-            const endPeriod = stringDateToJavaDate(toPeriod);
 
-            startPeriod.setHours(0, 0, 0, 0);
-            endPeriod.setHours(23, 59, 59, 9999);
-            if (!startPeriod || !endPeriod) {
-                res.status(400).json({ error: "Date provided could not be interpreted as java date." })
+
+
+        if (fromPeriod && toPeriod)
+            if (!isValidDateFormat(fromPeriod) || !isValidDateFormat(toPeriod)) {
+                res.status(400).json({ error: "Date provided does not fulfill the dd/mm/yyyy format, please try again respecting this format." })
+            }
+
+        const startPeriod = startOfDay(stringDateToJavaDate(fromPeriod));
+        const endPeriod = addDays(startOfDay(stringDateToJavaDate(toPeriod)), 1);
+
+        if (!startPeriod || !endPeriod) {
+            res.status(400).json({ error: "Date provided could not be interpreted as java date." })
+        };
+
+        if (!sales) {
+            whereClause.deliveringDate = {
+                gte: startPeriod,
+                lt: endPeriod
             };
 
-            if (!sales) {
-                whereClause.deliveringDate = {
-                    gte: startPeriod,
-                    lt: endPeriod
-                };
+            const nbOfOrders = await prisma.order.count({
+                where: whereClause
+            });
 
-                const nbOfOrders = await prisma.order.count({
-                    where: whereClause
-                });
-
-                return res.status(200).json({
-                    filter: `From ${fromPeriod} to ${toPeriod}`,
-                    count: nbOfOrders
-                })
-            }
-            if (sales === 'true' || 'True' || 'TRUE') {
-                const paidOrdersInPeriod = await prisma.order.findMany({
-                    where: {
-                        paidAt: {
-                            gte: startPeriod,
-                            lt: endPeriod
-                        }
-                    },
-                    include: {
-                        orderItems: {
-                            include: {
-                                product: {
-                                    select: {
-                                        price: true
-                                    }
+            return res.status(200).json({
+                filter: `From ${fromPeriod} to ${toPeriod}`,
+                count: nbOfOrders
+            })
+        }
+        if (['true', 'True', 'TRUE'].includes(sales)) {
+            const paidOrdersInPeriod = await prisma.order.findMany({
+                where: {
+                    paidAt: {
+                        gte: startPeriod,
+                        lt: endPeriod
+                    }
+                },
+                include: {
+                    orderItems: {
+                        include: {
+                            product: {
+                                select: {
+                                    price: true
                                 }
                             }
                         }
                     }
-                })
+                }
+            })
 
-                let totalRevenue = 0;
+            let totalRevenue = 0;
 
-                paidOrdersInPeriod.forEach(order => {
-                    order.orderItems.forEach(item => {
-                        if (item.product && typeof item.product.price === 'number') {
-                            totalRevenue += item.quantity * item.product.price
-                        }
-                    })
+            paidOrdersInPeriod.forEach(order => {
+                order.orderItems.forEach(item => {
+                    if (item.product && typeof item.product.price === 'number') {
+                        totalRevenue += item.quantity * item.product.price
+                    }
                 })
+            })
 
-                return res.status(200).json({
-                    message: `The total revenue from ${JavaDateToStringDate(startPeriod)} to ${JavaDateToStringDate(endPeriod)}.`,
-                    totalRevenue: totalRevenue
-                })
+            return res.status(200).json({
+                message: `The total revenue from ${JavaDateToStringDate(startPeriod)} to ${JavaDateToStringDate(endPeriod)}.`,
+                totalRevenue: totalRevenue
+            })
+        }
+
+
+
+
+        if (popularProducts) {
+            const popProducts = parseInt(popularProducts)
+
+            if (!Number.isInteger(popProducts)) {
+                return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
             }
 
+            if (popProducts < 1) {
+                return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
+            }
 
+            console.log(popProducts);
 
-
-            if (popularProducts) {
-                const popProducts = parseInt(popularProducts)
-
-                if (!Number.isInteger(popProducts)) {
-                    return res.status(400).json({ error: "Invalid entry for popularProducts, please enter a int number." })
-                }
-
-                if (popProducts < 1) {
-                    return res.status(400).json({ error: "Please, enter an integer equal or more than 1." })
-                }
-
-                console.log(popProducts);
-
-                const popularProductsSorted = await prisma.orderItem.groupBy({
-                    by: ['productId'],
+            const popularProductsSorted = await prisma.orderItem.groupBy({
+                by: ['productId'],
+                _sum: {
+                    quantity: true
+                },
+                orderBy: {
                     _sum: {
-                        quantity: true
-                    },
-                    orderBy: {
-                        _sum: {
-                            quantity: 'desc'
-                        }
-                    },
-                    take: popProducts
-                })
-
-                const productIds = popularProductsSorted.map(item => item.productId)
-                console.log(productIds)
-                const productDetails = await prisma.product.findMany({
-                    where: {
-                        id: {
-                            in: productIds
-                        }
-                    },
-                    select: {
-                        id: true,
-                        name: true,
-                        price: true
+                        quantity: 'desc'
                     }
-                });
+                },
+                take: popProducts
+            })
 
-                const formattedPopularProducts = popularProductsSorted.map(item => {
-                    const product = productDetails.find(product => product.id === item.productId)
-
-                    return {
-                        productId: item.productId,
-                        productName: product ? product.name : "Unknown product",
-                        productPrice: product ? product.price : null,
-                        totalQuantityOrdered: item._sum.quantity,
-
+            const productIds = popularProductsSorted.map(item => item.productId)
+            console.log(productIds)
+            const productDetails = await prisma.product.findMany({
+                where: {
+                    id: {
+                        in: productIds
                     }
-                })
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    price: true
+                }
+            });
 
-                return res.status(200).json({
-                    listPopProductIds: productIds,
-                    popularProducts: formattedPopularProducts
-                })
+            const formattedPopularProducts = popularProductsSorted.map(item => {
+                const product = productDetails.find(product => product.id === item.productId)
 
-            }
+                return {
+                    productId: item.productId,
+                    productName: product ? product.name : "Unknown product",
+                    productPrice: product ? product.price : null,
+                    totalQuantityOrdered: item._sum.quantity,
+
+                }
+            })
+
+            return res.status(200).json({
+                listPopProductIds: productIds,
+                popularProducts: formattedPopularProducts
+            })
+
+
         }
     }
     catch (error) {

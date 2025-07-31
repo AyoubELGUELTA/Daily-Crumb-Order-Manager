@@ -6,6 +6,7 @@ const authenticateToken = require('../middlewares/auth');
 const ProductsControllers = require('../controllers/products');
 
 const multer = require('multer');
+const checkAdminRole = require('../middlewares/checkAdmin');
 
 
 const storage = multer.diskStorage({
@@ -38,16 +39,16 @@ router.get('/:productId', ProductsControllers.get_single_product);
 
 
 
-router.post('/', authenticateToken, ProductsControllers.post_new_product);
+router.post('/', authenticateToken, checkAdminRole, ProductsControllers.post_new_product);
 
-router.delete('/:productId', authenticateToken, ProductsControllers.delete_product);
+router.delete('/:productId', authenticateToken, checkAdminRole, ProductsControllers.delete_product);
 
-router.patch('/:productId', authenticateToken, ProductsControllers.update_product);
+router.patch('/:productId', authenticateToken, checkAdminRole, ProductsControllers.update_product);
 
 
-router.post('/:productId/images', authenticateToken, upload.single('productImage'), ProductsControllers.post_new_image_product);
+router.post('/:productId/images', authenticateToken, checkAdminRole, upload.single('productImage'), ProductsControllers.post_new_image_product);
 
-router.delete('/:productId/images/:imageId', authenticateToken, ProductsControllers.delete_image_product);
+router.delete('/:productId/images/:imageId', authenticateToken, checkAdminRole, ProductsControllers.delete_image_product);
 
 
 module.exports = router;
