@@ -1,20 +1,17 @@
 const prisma = require('../../prismaClient.js');
 const { fileTypeFromFile } = require('file-type/node');
 const fs = require('fs/promises');
+const { relative } = require('path');
 
 
 exports.get_product = async (req, res, next) => {
+
+
     try {
 
         const products = await prisma.product.findMany({
-            select: {
-                id: true,
-                name: true,
-                price: true,
-                inStock: true,
-            },
             include: {
-                productImage: {
+                images: {
                     select: {
                         id: true,
                         url: true,
@@ -32,6 +29,11 @@ exports.get_product = async (req, res, next) => {
                     id: product.id,
                     name: product.name,
                     price: product.price,
+                    inStock: product.inStock,
+                    images: product.images.map(image => ({
+                        id: image.id,
+                        url: image.url
+                    })),
                     request: {
                         type: 'GET',
                         url: 'http://localhost:3100/products/' + product.id
@@ -40,7 +42,6 @@ exports.get_product = async (req, res, next) => {
                 )
 
         };
-        // res.status(200).json({ message: 'Handling Get all product successfully' });
 
         res.status(200).json(response)
     }
@@ -53,9 +54,20 @@ exports.get_product = async (req, res, next) => {
 
 exports.get_single_product = async (req, res, next) => {
 
+
     try {
-        const product = await prisma.Product.findUnique({
-            where: { id: parseInt(req.params.productId) }
+        const product = await prisma.product.findUnique({
+            where: { id: parseInt(req.params.productId) },
+            include: {
+                images: {
+                    select: {
+                        id: true,
+                        isMain: true,
+                        altText: true,
+                        url: true
+                    }
+                }
+            }
         });
 
         if (!product) {
@@ -67,7 +79,13 @@ exports.get_single_product = async (req, res, next) => {
                 id: product.id,
                 name: product.name,
                 price: product.price,
-                inStock: product.inStock
+                inStock: product.inStock,
+                images: product.images.map(image => ({
+                    id: image.id,
+                    isMain: image.isMain,
+                    altText: image.altText,
+                    url: image.url
+                })),
             },
             request: {
                 type: 'GET',
@@ -81,14 +99,16 @@ exports.get_single_product = async (req, res, next) => {
 
     }
     catch (error) {
-        res.status(500).json({ error: error });
+        res.status(500).json({ error: error.message });
     }
 }
 
 exports.post_new_product = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can delete users' });
+
+    if (req.user.userRole !== "Admin") {
+        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
     }
+
     try {
 
 
@@ -119,8 +139,9 @@ exports.post_new_product = async (req, res, next) => {
 
 exports.post_new_image_product = async (req, res, next) => {
 
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can delete products' });
+
+    if (req.user.userRole !== "Admin") {
+        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
     }
 
     const productId = parseInt(req.params.productId);
@@ -143,11 +164,10 @@ exports.post_new_image_product = async (req, res, next) => {
         const imageUrl = uploadedFile.path.replace(/\\/g, '/'); // Assurer un chemin URL-friendly
         let { isMain, altText } = req.body;
 
-        const product = prisma.product.findUnique({
+        const product = await prisma.product.findUnique({
             where: { id: productId }
         });
-
-        const productName = product.name
+        const productName = product.name.replace(' ', '_');
 
         const existingProductImages = await prisma.productImage.count({
             where: { productId: productId }
@@ -160,12 +180,15 @@ exports.post_new_image_product = async (req, res, next) => {
             }
         })
 
-        if ((!isMain && existingProductImages === 0) || (isMain === "true" || "True")) {
-            if (existingMainImage) {
+        if (existingMainImage) {
+            if (isMain === "true" || isMain === "True") {
+                await fs.unlink(uploadedFile.path)
                 return res.status(400).json({ message: "You already assigned a Main image, please remove this latter assignement to place it on this new image." })
             }
-            isMain = true
 
+            else if (existingProductImages === 0) {
+                isMain = true
+            }
         }
 
 
@@ -173,8 +196,6 @@ exports.post_new_image_product = async (req, res, next) => {
         if (!altText) {
             altText = "imageProduct-" + productName
         }
-
-
 
         const newProductImage = await prisma.productImage.create({
             data: {
@@ -191,12 +212,17 @@ exports.post_new_image_product = async (req, res, next) => {
     }
 
     catch (error) {
+        await fs.unlink(uploadedFile.path)
         res.status(500).json({ error: error.message })
     }
 
 };
 
 exports.delete_image_product = async (req, res, next) => {
+
+    if (req.user.userRole !== "Admin") {
+        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
+    }
 
     try {
         const productId = parseInt(req.params.productId);
@@ -219,7 +245,6 @@ exports.delete_image_product = async (req, res, next) => {
         }
 
         const imageUrl = imageProductToDelete.url;
-        console.log(imageUrl);
 
         const relativePath = imageUrl.split('api/uploads/')[1];
         await prisma.productImage.delete({
@@ -242,10 +267,10 @@ exports.delete_image_product = async (req, res, next) => {
 };
 
 exports.delete_product = async (req, res, next) => {
-    if (req.user.userRole !== 'Admin') {
-        return res.status(403).json({ message: 'Only admins can delete products' });
-    }
 
+    if (req.user.userRole !== "Admin") {
+        return res.status(400).json({ message: "Only Admins can access (to) this tool/information." })
+    }
     try {
 
         const productId = parseInt(req.params.productId)
@@ -264,11 +289,30 @@ exports.delete_product = async (req, res, next) => {
             return res.status(404).json({ error: `Product with ID ${productId} not found.` })
         };
 
+        const imagesToDelete = await prisma.productImage.findMany({
+            where: { productId: productId }
+        });
+
+
+        let imageUrl = null;
+
+        let relativePath = null;
+
+        for (image of imagesToDelete) {
+            imageUrl = image.url;
+
+            relativePath = imageUrl.split('api/uploads/')[1]
+
+            await fs.unlink(`api/uploads/${relativePath}`)
+        }
+
         await prisma.product.delete({
             where: {
                 id: productId,
             },
         });
+
+
 
         res.status(204).send();
 

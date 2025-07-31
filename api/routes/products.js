@@ -47,8 +47,7 @@ router.patch('/:productId', authenticateToken, ProductsControllers.update_produc
 
 router.post('/:productId/images', authenticateToken, upload.single('productImage'), ProductsControllers.post_new_image_product);
 
-router.delete('/:productId/images/:imageId', authenticateToken, ProductsControllers.delete_image_product)
-    ;
+router.delete('/:productId/images/:imageId', authenticateToken, ProductsControllers.delete_image_product);
 
 
 module.exports = router;
